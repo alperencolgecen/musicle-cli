@@ -1,0 +1,6 @@
+# Embedded engine binaries (Python venv + spotdl + yt-dlp + ffmpeg)
+engine/venv/
+engine/ffmpeg/
+
+# Generated on `make prepare-engine`. Do not commit. The Go embed points here
+# at build time so the binary becomes self-contained.
