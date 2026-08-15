@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"MusicLeCLI/bridge/download/music"
 	"MusicLeCLI/bridge/download/playlist"
@@ -23,12 +24,6 @@ func engineDisabled() bool {
 func isSpotifyURL(url string) bool {
 	u := strings.ToLower(strings.TrimSpace(url))
 	return strings.Contains(u, "spotify.com") || strings.HasPrefix(u, "spotify:")
-}
-
-// isYouTubeURL detects YouTube links so we don't hand a YouTube URL to spotdl.
-func isYouTubeURL(url string) bool {
-	u := strings.ToLower(strings.TrimSpace(url))
-	return strings.Contains(u, "youtube.com") || strings.Contains(u, "youtu.be")
 }
 
 // downloadYouTube downloads a YouTube URL using the embedded engine when
@@ -67,10 +62,12 @@ func downloadYouTube(url, outputDir string) *Result {
 	return meta
 }
 
-// runEngine is the unified yt-dlp / spotdl dispatcher. It tries the embedded
-// engine first, routing by URL type, and returns (result, true) when the
-// engine handled the URL. On any engine error or when the engine binary is
-// not embedded it returns (nil, false) so the caller can fall back.
+// runEngine is the unified yt-dlp / spotdl dispatcher and the head of the
+// error fallback chain. It tries the embedded engine first, routing by URL
+// type, and verifies a real audio file was produced before declaring
+// success. When the engine is unavailable, returns an error, or writes
+// nothing, it returns (nil, false) so the caller falls back to the legacy
+// pipeline.
 func runEngine(url, outputDir string) (*Result, bool) {
 	if engineDisabled() {
 		return nil, false
@@ -79,6 +76,9 @@ func runEngine(url, outputDir string) (*Result, bool) {
 		CurrentDownload.Set(true, 0, "Bridge: motor yok, eski yöntem kullanılıyor")
 		return nil, false
 	}
+
+	before := time.Now()
+	prior := listAudioFiles(outputDir)
 
 	if isSpotifyURL(url) {
 		CurrentDownload.Set(true, 0, "Bridge: spotdl motoru başlatılıyor...")
@@ -104,13 +104,100 @@ func runEngine(url, outputDir string) (*Result, bool) {
 		}
 	}
 
-	CurrentDownload.Set(false, 100, "Motor ile tamamlandı")
-	return &Result{Status: "ok", Message: "gömülü motor ile indirildi"}, true
+	// Fallback zinciri: motor başarıyla döndü ama bir dosya üretmediyse
+	// (ör. bilinmeyen URL, boş çalma listesi) legacy yönteme düş.
+	if f := newestAudioFile(outputDir, before, prior); f != "" {
+		CurrentDownload.Set(false, 100, fmt.Sprintf("Motor ile tamamlandı: %s", filepath.Base(f)))
+		return resultFromFile(f), true
+	}
+
+	CurrentDownload.Set(false, 0, "Motor dosya üretmedi, eski yöntem deneniyor")
+	return nil, false
 }
 
 // engineProgress forwards the engine's progress events to the shared UI state.
 func engineProgress(pct int, msg string) {
 	CurrentDownload.Set(true, float64(pct), msg)
+}
+
+// audioExts are the container extensions the engines may emit.
+var audioExts = map[string]bool{
+	".mp3": true, ".m4a": true, ".webm": true, ".ogg": true, ".opus": true,
+}
+
+// resultFromFile builds a Result for an engine-produced file, enriching it
+// with metadata when possible, else deriving a title from the filename.
+func resultFromFile(filePath string) *Result {
+	meta := extractMetadata(filePath)
+	if meta.Status == "ok" && meta.Title != "" {
+		return meta
+	}
+	base := filepath.Base(filePath)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	return &Result{
+		Status:   "ok",
+		Filename: base,
+		Title:    name,
+		Artist:   "Unknown",
+	}
+}
+
+// listAudioFiles returns the set of audio filenames currently in outputDir.
+func listAudioFiles(outputDir string) map[string]struct{} {
+	out := make(map[string]struct{})
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if audioExts[strings.ToLower(filepath.Ext(e.Name()))] {
+			out[e.Name()] = struct{}{}
+		}
+	}
+	return out
+}
+
+// newestAudioFile returns the path of the most recently modified audio file in
+// outputDir that was created after `before` and was not present beforehand.
+// Returns "" when the engine produced nothing new — signalling the caller to
+// fall back to the legacy pipeline.
+func newestAudioFile(outputDir string, before time.Time, prior map[string]struct{}) string {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return ""
+	}
+	var best string
+	var bestMod time.Time
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if !audioExts[strings.ToLower(filepath.Ext(e.Name()))] {
+			continue
+		}
+		if _, seen := prior[e.Name()]; seen {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		mod := info.ModTime()
+		if mod.Before(before) {
+			continue
+		}
+		if best == "" || mod.After(bestMod) {
+			best = e.Name()
+			bestMod = mod
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	return filepath.Join(outputDir, best)
 }
 
 // downloadSpotify downloads a Spotify URL. Handles both track and playlist URLs.
