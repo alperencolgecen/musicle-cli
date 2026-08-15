@@ -229,13 +229,12 @@ func DownloadStream(streamURL string, contentLen int64, cb download.ProgressCall
 			lastErr = fmt.Errorf("create request: %w", err)
 			continue
 		}
-		req.Header.Set("User-Agent", userAgent)
-		req.Header.Set("Accept", "*/*")
-		req.Header.Set("Referer", "https://www.youtube.com/")
-		req.Header.Set("Origin", "https://www.youtube.com")
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Referer", "https://www.youtube.com/")
+	req.Header.Set("Origin", "https://www.youtube.com")
 
-		client := &http.Client{}
-		resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("http get (attempt %d): %w", attempt+1, err)
 			continue
@@ -340,6 +339,35 @@ func findYTDLP() string {
 	return ytdlpPath
 }
 
+var ffmpegPath string
+var ffmpegOnce sync.Once
+
+func findFFmpeg() string {
+	ffmpegOnce.Do(func() {
+		paths := []string{
+			"ffmpeg",
+			filepath.Join(os.Getenv("APPDIR"), "usr", "bin", "ffmpeg"),
+			filepath.Join(filepath.Dir(os.Args[0]), "ffmpeg"),
+			"/usr/local/bin/ffmpeg",
+			"/usr/bin/ffmpeg",
+		}
+		for _, p := range paths {
+			if p == "" {
+				continue
+			}
+			if _, err := os.Stat(p); err == nil {
+				ffmpegPath = p
+				return
+			}
+		}
+		// Also check cwd for development
+		if _, err := os.Stat("./ffmpeg"); err == nil {
+			ffmpegPath = "./ffmpeg"
+		}
+	})
+	return ffmpegPath
+}
+
 // DownloadYouTubeTrackWithFallback tries pure-Go parsing first, then falls back to yt-dlp.
 func DownloadYouTubeTrack(urlOrID string, cb download.ProgressCallback) (*download.TrackInfo, []byte, error) {
 	html, err := FetchYouTubePage(urlOrID)
@@ -420,7 +448,13 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 	}
 
 	jsonCtx, jsonCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	metaCmd := exec.CommandContext(jsonCtx, ytdlp, "--dump-json", "--no-warnings", watchURL)
+	metaCmd := exec.CommandContext(jsonCtx, ytdlp,
+		"--dump-json",
+		"--no-warnings",
+		"--cookies-from-browser", "chrome",
+		"--extractor-args", "youtube:player_client=web",
+		watchURL,
+	)
 	var metaJSON bytes.Buffer
 	var metaStderr bytes.Buffer
 	metaCmd.Stdout = &metaJSON
@@ -435,10 +469,10 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 
 	if metaJSON.Len() > 0 {
 		var meta struct {
-			Title    string  `json:"title"`
-			Channel  string  `json:"channel"`
-			Duration float64 `json:"duration"`
-			Thumbnail string `json:"thumbnail"`
+			Title     string  `json:"title"`
+			Channel   string  `json:"channel"`
+			Duration  float64 `json:"duration"`
+			Thumbnail string  `json:"thumbnail"`
 		}
 		if err := json.Unmarshal(metaJSON.Bytes(), &meta); err == nil {
 			title = meta.Title
@@ -461,6 +495,8 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 		"-o", "-",
 		"--no-warnings",
 		"--no-playlist",
+		"--cookies-from-browser", "chrome",
+		"--extractor-args", "youtube:player_client=web",
 		watchURL,
 	)
 
@@ -503,6 +539,124 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 		Thumbnail:   thumbnail,
 	}
 	return track, rawAudio, nil
+}
+
+// DownloadYouTubeTrackDirectMP3 downloads a YouTube track directly as MP3 using yt-dlp + ffmpeg.
+// This bypasses the pure Go WebM/Opus pipeline entirely and is much more reliable.
+// Returns the MP3 bytes and track metadata.
+func DownloadYouTubeTrackDirectMP3(videoID string, cb download.ProgressCallback) (*download.TrackInfo, []byte, error) {
+	ytdlp := findYTDLP()
+	if ytdlp == "" {
+		return nil, nil, fmt.Errorf("yt-dlp not found")
+	}
+
+	ffmpeg := findFFmpeg()
+	if ffmpeg == "" {
+		return nil, nil, fmt.Errorf("ffmpeg not found")
+	}
+
+	watchURL := videoID
+	if !strings.HasPrefix(videoID, "http") {
+		watchURL = "https://www.youtube.com/watch?v=" + videoID
+	}
+
+	if cb != nil {
+		cb(5, "Getting metadata...")
+	}
+
+	jsonCtx, jsonCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	metaCmd := exec.CommandContext(jsonCtx, ytdlp,
+		"--dump-json",
+		"--no-warnings",
+		"--cookies-from-browser", "chrome",
+		"--extractor-args", "youtube:player_client=web",
+		watchURL,
+	)
+	var metaJSON bytes.Buffer
+	var metaStderr bytes.Buffer
+	metaCmd.Stdout = &metaJSON
+	metaCmd.Stderr = &metaStderr
+	metaCmd.Run()
+	jsonCancel()
+
+	title := "Unknown"
+	channel := "Unknown"
+	duration := 0.0
+	thumbnail := ""
+
+	if metaJSON.Len() > 0 {
+		var meta struct {
+			Title     string  `json:"title"`
+			Channel   string  `json:"channel"`
+			Duration  float64 `json:"duration"`
+			Thumbnail string  `json:"thumbnail"`
+		}
+		if err := json.Unmarshal(metaJSON.Bytes(), &meta); err == nil {
+			title = meta.Title
+			channel = meta.Channel
+			duration = meta.Duration
+			thumbnail = meta.Thumbnail
+		}
+	}
+
+	if cb != nil {
+		cb(10, fmt.Sprintf("Downloading %s as MP3...", title))
+	}
+
+	tmpMp3, err := os.CreateTemp("", "musicle_*.mp3")
+	if err != nil {
+		return nil, nil, fmt.Errorf("temp mp3: %w", err)
+	}
+	tmpMp3Name := tmpMp3.Name()
+	tmpMp3.Close()
+	defer os.Remove(tmpMp3Name)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, ytdlp,
+		"-x", "--audio-format", "mp3",
+		"--audio-quality", "0",
+		"-o", tmpMp3Name,
+		"--no-warnings",
+		"--no-playlist",
+		"--cookies-from-browser", "chrome",
+		"--extractor-args", "youtube:player_client=web",
+		watchURL,
+	)
+
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	if err := cmd.Run(); err != nil {
+		stderrStr := strings.TrimSpace(errBuf.String())
+		if stderrStr != "" {
+			return nil, nil, fmt.Errorf("yt-dlp: %w\n%s", err, stderrStr)
+		}
+		return nil, nil, fmt.Errorf("yt-dlp: %w", err)
+	}
+
+	mp3Data, err := os.ReadFile(tmpMp3Name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read mp3: %w", err)
+	}
+
+	if cb != nil {
+		cb(100, "Downloaded")
+	}
+
+	track := &download.TrackInfo{
+		Title:       title,
+		Artist:      channel,
+		Album:       channel,
+		DurationSec: duration,
+		StreamURL:   watchURL,
+		Format:      "mp3",
+		ContentLen:  int64(len(mp3Data)),
+		Thumbnail:   thumbnail,
+	}
+	return track, mp3Data, nil
 }
 
 func min(a, b int) int {
