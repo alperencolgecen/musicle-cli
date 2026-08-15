@@ -106,13 +106,28 @@ func runEngine(url, outputDir string) (*Result, bool) {
 
 	// Fallback zinciri: motor başarıyla döndü ama bir dosya üretmediyse
 	// (ör. bilinmeyen URL, boş çalma listesi) legacy yönteme düş.
-	if f := newestAudioFile(outputDir, before, prior); f != "" {
-		CurrentDownload.Set(false, 100, fmt.Sprintf("Motor ile tamamlandı: %s", filepath.Base(f)))
-		return resultFromFile(f), true
+	files := newAudioFiles(outputDir, before, prior)
+	if len(files) == 0 {
+		CurrentDownload.Set(false, 0, "Motor dosya üretmedi, eski yöntem deneniyor")
+		return nil, false
 	}
 
-	CurrentDownload.Set(false, 0, "Motor dosya üretmedi, eski yöntem deneniyor")
-	return nil, false
+	// Tek dosya → tek sonuç; çok dosya (çalma listesi) → şarkı listesi.
+	if len(files) == 1 {
+		CurrentDownload.Set(false, 100, fmt.Sprintf("Motor ile tamamlandı: %s", filepath.Base(files[0])))
+		return resultFromFile(files[0]), true
+	}
+
+	songs := make([]Result, 0, len(files))
+	for _, f := range files {
+		songs = append(songs, *resultFromFile(f))
+	}
+	CurrentDownload.Set(false, 100, fmt.Sprintf("Motor ile %d şarkı indirildi", len(songs)))
+	return &Result{
+		Status:  "ok",
+		Message: fmt.Sprintf("%d şarkı indirildi", len(songs)),
+		Songs:   songs,
+	}, true
 }
 
 // engineProgress forwards the engine's progress events to the shared UI state.
@@ -160,17 +175,21 @@ func listAudioFiles(outputDir string) map[string]struct{} {
 	return out
 }
 
-// newestAudioFile returns the path of the most recently modified audio file in
-// outputDir that was created after `before` and was not present beforehand.
-// Returns "" when the engine produced nothing new — signalling the caller to
-// fall back to the legacy pipeline.
-func newestAudioFile(outputDir string, before time.Time, prior map[string]struct{}) string {
+// newAudioFiles returns the paths of every audio file in outputDir that was
+// created after `before` and was not present beforehand, sorted by modification
+// time (oldest first, i.e. download order). An empty slice signals the engine
+// produced nothing new, prompting the caller to fall back to the legacy
+// pipeline. For playlists this yields all tracks; for a single track just one.
+func newAudioFiles(outputDir string, before time.Time, prior map[string]struct{}) []string {
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {
-		return ""
+		return nil
 	}
-	var best string
-	var bestMod time.Time
+	type hit struct {
+		path string
+		mod  time.Time
+	}
+	var hits []hit
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -189,15 +208,22 @@ func newestAudioFile(outputDir string, before time.Time, prior map[string]struct
 		if mod.Before(before) {
 			continue
 		}
-		if best == "" || mod.After(bestMod) {
-			best = e.Name()
-			bestMod = mod
+		hits = append(hits, hit{filepath.Join(outputDir, e.Name()), mod})
+	}
+	if len(hits) == 0 {
+		return nil
+	}
+	// Insertion sort by mod time (small N); stable enough for display order.
+	for i := 1; i < len(hits); i++ {
+		for j := i; j > 0 && hits[j-1].mod.After(hits[j].mod); j-- {
+			hits[j-1], hits[j] = hits[j], hits[j-1]
 		}
 	}
-	if best == "" {
-		return ""
+	out := make([]string, len(hits))
+	for i, h := range hits {
+		out[i] = h.path
 	}
-	return filepath.Join(outputDir, best)
+	return out
 }
 
 // downloadSpotify downloads a Spotify URL. Handles both track and playlist URLs.
