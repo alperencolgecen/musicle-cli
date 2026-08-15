@@ -39,28 +39,28 @@ type DownloadsModel struct {
 	width  int
 	height int
 
-	sectionIdx int // 0=console, 1=music, 2=playlist
-	focusIdx   int // element within current section
+	sectionIdx  int // 0=console, 1=music, 2=playlist
+	focusIdx    int // element within current section
 	playlistIdx int
 
-	musicInput    textinput.Model // single URL input for music download
-	plURLInput    textinput.Model // playlist download URL
+	musicInput textinput.Model // single URL input for music download
+	plURLInput textinput.Model // playlist download URL
 
-	logLines          []logEntry
-	consoleScroll     int
-	consoleCursorPos  int
-	consoleCursorCol  int
-	consoleSelStart   int // -1 = no selection
-	consoleSelCol     int // anchor column for selection
+	logLines         []logEntry
+	consoleScroll    int
+	consoleCursorPos int
+	consoleCursorCol int
+	consoleSelStart  int // -1 = no selection
+	consoleSelCol    int // anchor column for selection
 
-	isDownloading     bool
-	downloadStart     time.Time
-	downloadedTracks  int
-	failedTracks      int
-	downloadHistory   []downloadHistoryItem
-	downloadPercent   float64
-	downloadStatus    string
-	lastLoggedPct  int // dedup progress logs
+	isDownloading    bool
+	downloadStart    time.Time
+	downloadedTracks int
+	failedTracks     int
+	downloadHistory  []downloadHistoryItem
+	downloadPercent  float64
+	downloadStatus   string
+	lastLoggedPct    int // dedup progress logs
 
 	playlistOptions []string
 }
@@ -499,10 +499,8 @@ func (m *DownloadsModel) startPlaylistDownload() tea.Cmd {
 	m.addLog("info", fmt.Sprintf("Starting playlist download: %s", url))
 
 	// Detect if it's a Spotify or YouTube playlist URL
-	action := "download_spotify"
-	if strings.Contains(strings.ToLower(url), "youtube") || strings.Contains(strings.ToLower(url), "youtu.be") {
-		action = "download_youtube"
-	}
+	action := detectDownloadProvider(url)
+	m.addLog("info", fmt.Sprintf("Detected provider: %s", action))
 
 	return func() tea.Msg {
 		return StartDownloadMsg{Action: action, URL: url, Output: outDir}
@@ -518,6 +516,24 @@ func (m *DownloadsModel) RefreshTheme() {
 	m.musicInput.PromptStyle = ui.AccentStyle
 	m.plURLInput.Cursor.Style = cursorStyle
 	m.plURLInput.PromptStyle = ui.AccentStyle
+}
+
+// detectDownloadProvider inspects a URL's shape and returns the download
+// action the bridge should run. Spotify links/URIs route to the Spotify
+// pipeline (spotdl); recognised YouTube links (watch, short, music, playlist)
+// route to the YouTube pipeline (yt-dlp). Unrecognised URLs default to
+// Spotify to preserve prior behaviour. The choice is logged so the user can
+// see which provider the unified engine dispatcher will target.
+func detectDownloadProvider(rawURL string) string {
+	u := strings.ToLower(strings.TrimSpace(rawURL))
+	switch {
+	case strings.Contains(u, "spotify.com") || strings.HasPrefix(u, "spotify:"):
+		return "download_spotify"
+	case strings.Contains(u, "youtube.com"), strings.Contains(u, "youtu.be"):
+		return "download_youtube"
+	default:
+		return "download_spotify"
+	}
 }
 
 func (m *DownloadsModel) startDownload() tea.Cmd {
@@ -554,10 +570,8 @@ func (m *DownloadsModel) startDownload() tea.Cmd {
 		m.addLog("info", "No playlist selected, using current directory")
 	}
 
-	action := "download_spotify"
-	if strings.Contains(strings.ToLower(url), "youtube") || strings.Contains(strings.ToLower(url), "youtu.be") {
-		action = "download_youtube"
-	}
+	action := detectDownloadProvider(url)
+	m.addLog("info", fmt.Sprintf("Detected provider: %s", action))
 
 	m.isDownloading = true
 	m.downloadStart = time.Now()
@@ -626,24 +640,40 @@ func (m *DownloadsModel) HandleCtrlC() {
 		runes := []rune(msg)
 		if loLn == hiLn {
 			clo, chi := m.consoleSelCol, m.consoleCursorCol
-			if clo > chi { clo, chi = chi, clo }
-			if clo < 0 { clo = 0 }
-			if chi > len(runes) { chi = len(runes) }
+			if clo > chi {
+				clo, chi = chi, clo
+			}
+			if clo < 0 {
+				clo = 0
+			}
+			if chi > len(runes) {
+				chi = len(runes)
+			}
 			if clo < chi {
 				texts = append(texts, string(runes[clo:chi]))
 			}
 		} else if i == loLn {
 			col := m.consoleSelCol
-			if loLn != m.consoleSelStart { col = m.consoleCursorCol }
-			if col < 0 { col = 0 }
+			if loLn != m.consoleSelStart {
+				col = m.consoleCursorCol
+			}
+			if col < 0 {
+				col = 0
+			}
 			if col < len(runes) {
 				texts = append(texts, string(runes[col:]))
 			}
 		} else if i == hiLn {
 			col := m.consoleCursorCol
-			if hiLn != m.consoleCursorPos { col = m.consoleSelCol }
-			if col < 0 { col = 0 }
-			if col > len(runes) { col = len(runes) }
+			if hiLn != m.consoleCursorPos {
+				col = m.consoleSelCol
+			}
+			if col < 0 {
+				col = 0
+			}
+			if col > len(runes) {
+				col = len(runes)
+			}
 			if col > 0 {
 				texts = append(texts, string(runes[:col]))
 			}
@@ -833,7 +863,9 @@ func (m *DownloadsModel) renderConsole(bodyH int) string {
 			isCursor := isConsoleFocused && i == m.consoleCursorPos
 			loLn := m.consoleSelStart
 			hiLn := m.consoleCursorPos
-			if loLn > hiLn { loLn, hiLn = hiLn, loLn }
+			if loLn > hiLn {
+				loLn, hiLn = hiLn, loLn
+			}
 			inSel := isConsoleFocused && m.consoleSelStart >= 0 && i >= loLn && i <= hiLn
 
 			msg := entry.message
@@ -844,21 +876,33 @@ func (m *DownloadsModel) renderConsole(bodyH int) string {
 			if inSel {
 				if loLn == hiLn {
 					clo, chi = m.consoleSelCol, m.consoleCursorCol
-					if clo > chi { clo, chi = chi, clo }
+					if clo > chi {
+						clo, chi = chi, clo
+					}
 				} else if i == loLn {
 					clo = m.consoleSelCol
-					if loLn != m.consoleSelStart { clo = m.consoleCursorCol }
+					if loLn != m.consoleSelStart {
+						clo = m.consoleCursorCol
+					}
 					chi = n
 				} else if i == hiLn {
 					clo = 0
 					chi = m.consoleCursorCol
-					if hiLn != m.consoleCursorPos { chi = m.consoleSelCol }
+					if hiLn != m.consoleCursorPos {
+						chi = m.consoleSelCol
+					}
 				} else {
 					clo, chi = 0, n
 				}
-				if clo < 0 { clo = 0 }
-				if chi > n { chi = n }
-				if clo > chi { clo, chi = chi, clo }
+				if clo < 0 {
+					clo = 0
+				}
+				if chi > n {
+					chi = n
+				}
+				if clo > chi {
+					clo, chi = chi, clo
+				}
 			}
 
 			selBefore := string(runes[:clo])
@@ -867,8 +911,12 @@ func (m *DownloadsModel) renderConsole(bodyH int) string {
 
 			if isCursor && inSel {
 				cc := m.consoleCursorCol
-				if cc < 0 { cc = 0 }
-				if cc > n { cc = n }
+				if cc < 0 {
+					cc = 0
+				}
+				if cc > n {
+					cc = n
+				}
 				if cc <= clo {
 					selPart := levelStyle.Render(string(runes[:cc]))
 					cursPart := cursorStyle.Render(" ")
@@ -895,8 +943,12 @@ func (m *DownloadsModel) renderConsole(bodyH int) string {
 				}
 			} else if isCursor {
 				col := m.consoleCursorCol
-				if col < 0 { col = 0 }
-				if col > n { col = n }
+				if col < 0 {
+					col = 0
+				}
+				if col > n {
+					col = n
+				}
 				msgStyled = levelTxt + levelStyle.Render(string(runes[:col])) + cursorStyle.Render(" ") + levelStyle.Render(string(runes[col:]))
 			} else if inSel {
 				msgStyled = levelTxt + levelStyle.Render(selBefore) + selBg.Render(levelStyle.Render(selMid)) + levelStyle.Render(selAfter)
