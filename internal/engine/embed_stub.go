@@ -7,13 +7,32 @@
 
 package engine
 
-import "errors"
+import (
+	"errors"
+	"io/fs"
+)
 
-// ErrNoEmbeddedAssets is returned when the binary was compiled without the
-// engine_assets build tag. This happens when the engine payload was not
-// prepared before the Go build.
 var ErrNoEmbeddedAssets = errors.New("engine: gömülü motor paketi derlenmedi (build tag engine_assets gerekli)")
 
-// venvFS / ffmpegFS are nil here; any caller that hits them will panic.
-// Real usage always flows through Extract(), which checks the build tag
-// first and returns ErrNoEmbeddedAssets before touching the FS variables.
+// probeEmbedded always fails in the stub build so the wrapper code can
+// gracefully return ErrNoEmbeddedAssets instead of touching undefined FSes.
+func probeEmbedded() error {
+	return ErrNoEmbeddedAssets
+}
+
+// venvFS and ffmpegFS are unused in the stub build; they are placeholders so
+// other code in the package that references them still type-checks under
+// `go vet` (these references are dead code that probeEmbedded() guards).
+var (
+	venvFS   = emptyFS{}
+	ffmpegFS = emptyFS{}
+)
+
+// emptyFS satisfies fs.FS but returns ErrNotExist for any path. It only
+// exists so stub builds compile.
+type emptyFS struct{}
+
+func (emptyFS) Open(_ string) (fs.File, error) { return nil, fs.ErrNotExist }
+func (emptyFS) ReadDir(_ string) ([]fs.DirEntry, error) {
+	return nil, fs.ErrNotExist
+}

@@ -4,7 +4,24 @@
 
 package engine
 
-import "embed"
+import (
+	"embed"
+	"errors"
+	"io/fs"
+)
+
+var ErrNoEmbeddedAssets = errors.New("engine: gömülü motor paketi derlenmedi (build tag engine_assets gerekli)")
+
+// probeEmbedded verifies the embedded FSes are usable at runtime.
+func probeEmbedded() error {
+	if _, err := fs.ReadFile(venvFS, ".engine-stamp"); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return errors.New("engine: gömülü venv bozuk (engine-stamp eksik)")
+		}
+		return err
+	}
+	return nil
+}
 
 //go:embed all:engine_venv
 var venvFS embed.FS
