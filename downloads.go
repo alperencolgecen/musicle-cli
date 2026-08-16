@@ -785,7 +785,9 @@ func (m *DownloadsModel) addLog(level, msg string) {
 	}
 }
 
-func (m *DownloadsModel) renderConsole(bodyH int) string {
+// consoleWidth returns the console panel's column width, derived from the
+// whole download view width so the right column always fits beside it.
+func (m *DownloadsModel) consoleWidth() int {
 	w := 38
 	if m.width > 0 {
 		w = m.width / 3
@@ -796,6 +798,11 @@ func (m *DownloadsModel) renderConsole(bodyH int) string {
 			w = 55
 		}
 	}
+	return w
+}
+
+func (m *DownloadsModel) renderConsole(bodyH int) string {
+	w := m.consoleWidth()
 	title := ui.SectionTitleStyle.Render(langT("CONSOLE", "KONSOL"))
 	visible := bodyH - 4
 	if visible < 8 {
@@ -1017,7 +1024,13 @@ func (m *DownloadsModel) View() string {
 		m.height = 40
 	}
 
-	boxW := 75
+	boxW := m.width - m.consoleWidth() - 3
+	if boxW < 50 {
+		boxW = 50
+	}
+	if boxW > 75 {
+		boxW = 75
+	}
 	inSection := m.sectionIdx // 0=console, 1=music, 2=playlist
 
 	// ── Music Download section ──
@@ -1098,8 +1111,13 @@ func (m *DownloadsModel) View() string {
 	rightSide := lipgloss.JoinVertical(lipgloss.Left, musicBox, "", plBox)
 	rightH := lipgloss.Height(rightSide)
 
-	// Console height matches right side (like playlist page)
-	console := m.renderConsole(rightH)
+	// Konsol, sağ sütundan sonra kalan ekranı dolduracak şekilde sabit
+	// yükseklikte kalır; toplam görünüm m.height'i aşmaz.
+	consoleH := m.height - rightH
+	if consoleH < 6 {
+		consoleH = 6
+	}
+	console := m.renderConsole(consoleH)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, console, rightSide)
 }
