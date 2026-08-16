@@ -132,21 +132,28 @@ type AppState struct {
 	ConfigDir       string
 	NetworkOnline   bool
 	Theme           string // accent color theme name
+
+	// Sound settings
+	SoundOutputDevice string // selected output sink name (empty = system default)
+	SoundVolumeLimit  int    // max percentage of device volume the app may use (0-100)
 }
 
 // Current is the global app state
 var Current = &AppState{
-	Player:   PlayerState{Volume: 0.7},
-	Language: LangEnglish,
-	Theme:    "green",
+	Player:           PlayerState{Volume: 0.7},
+	Language:         LangEnglish,
+	Theme:            "green",
+	SoundVolumeLimit: 100,
 }
 
 // savedConfig is the on-disk persistent config format
 type savedConfig struct {
-	RootDir  string   `json:"root_dir"`
-	Language Language `json:"language"`
-	LastUser string   `json:"last_user"`
-	Theme    string   `json:"theme"`
+	RootDir           string   `json:"root_dir"`
+	Language          Language `json:"language"`
+	LastUser          string   `json:"last_user"`
+	Theme             string   `json:"theme"`
+	SoundOutputDevice string   `json:"sound_output_device"`
+	SoundVolumeLimit  int      `json:"sound_volume_limit"`
 }
 
 func (a *AppState) configPath() string {
@@ -169,6 +176,11 @@ func (a *AppState) LoadConfig() error {
 	if a.Theme == "" {
 		a.Theme = "green"
 	}
+	a.SoundOutputDevice = cfg.SoundOutputDevice
+	a.SoundVolumeLimit = cfg.SoundVolumeLimit
+	if a.SoundVolumeLimit <= 0 || a.SoundVolumeLimit > 100 {
+		a.SoundVolumeLimit = 100
+	}
 	return nil
 }
 
@@ -177,7 +189,13 @@ func (a *AppState) SaveConfig() error {
 	if err := os.MkdirAll(a.ConfigDir, 0755); err != nil {
 		return err
 	}
-	cfg := savedConfig{RootDir: a.RootDir, Language: a.Language, Theme: a.Theme}
+	cfg := savedConfig{
+		RootDir:           a.RootDir,
+		Language:          a.Language,
+		Theme:             a.Theme,
+		SoundOutputDevice: a.SoundOutputDevice,
+		SoundVolumeLimit:  a.SoundVolumeLimit,
+	}
 	if a.CurrentProfile != nil {
 		cfg.LastUser = a.CurrentProfile.FolderName
 	}
