@@ -58,6 +58,9 @@ type SettingsModel struct {
 	soundDevices []audio.Device // enumerated output sinks
 	soundSel     int            // highlighted device index
 	volLimit     int            // 0-100, mirrors state.Current.SoundVolumeLimit
+
+	// Scroll offset for the long-text tabs (Policies, About).
+	scroll int
 }
 
 func NewSettingsModel() *SettingsModel {
@@ -109,6 +112,9 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When the right panel is focused, keys navigate the selection list
 		// instead of bubbling up to the MainModel global handlers.
 		if m.rightFocused {
+			if handled, cmd := m.handleScrollKey(msg.String()); handled {
+				return m, cmd
+			}
 			switch msg.String() {
 			case "esc", "tab", "shift+tab":
 				m.rightFocused = false
@@ -158,6 +164,11 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.applyActiveTab()
 		}
+	}
+	// Long-text tabs (Policies, About) scroll with ↑/↓ even when the right
+	// panel is not focused.
+	if handled, cmd := m.handleScrollKey(msg.String()); handled {
+		return m, cmd
 	}
 	return m, nil
 }
@@ -383,6 +394,10 @@ func (m *SettingsModel) renderRightPanel(width int, height int) string {
 		content = m.renderLangTab(width)
 	case "tab.sound":
 		content = m.renderSoundTab(width)
+	case "tab.policies":
+		content = m.renderScrollableTab(width, height, Tr("tab.policies"), policiesContent())
+	case "tab.about":
+		content = m.renderScrollableTab(width, height, Tr("tab.about"), aboutContent())
 	default:
 		content = m.renderPlaceholder(width)
 	}
@@ -490,6 +505,118 @@ func (m *SettingsModel) volumeBar(pct, w int) string {
 		filled = 0
 	}
 	return "[" + strings.Repeat("=", filled) + strings.Repeat(" ", w-filled) + "]"
+}
+
+// handleScrollKey intercepts ↑/↓/PgUp/PgDn for the long-text tabs so the user
+// can read Policies/About without leaving the Settings view.
+func (m *SettingsModel) handleScrollKey(s string) (bool, tea.Cmd) {
+	id := settingsTabs[m.activeTab].id
+	if id != "tab.policies" && id != "tab.about" {
+		return false, nil
+	}
+	switch s {
+	case "up", "k":
+		m.scrollBy(-1)
+	case "down", "j":
+		m.scrollBy(1)
+	case "pgup":
+		m.scrollBy(-10)
+	case "pgdown":
+		m.scrollBy(10)
+	default:
+		return false, nil
+	}
+	return true, nil
+}
+
+// scrollBy moves the long-text view; the renderer clamps to valid range.
+func (m *SettingsModel) scrollBy(d int) {
+	m.scroll += d
+	if m.scroll < 0 {
+		m.scroll = 0
+	}
+}
+
+// wrapText hard-wraps text to width w at word boundaries.
+func wrapText(text string, w int) []string {
+	if w < 10 {
+		w = 10
+	}
+	var out []string
+	for _, para := range strings.Split(text, "\n") {
+		if para == "" {
+			out = append(out, "")
+			continue
+		}
+		words := strings.Fields(para)
+		if len(words) == 0 {
+			out = append(out, "")
+			continue
+		}
+		line := ""
+		for _, word := range words {
+			if line == "" {
+				line = word
+			} else if lipgloss.Width(line)+1+lipgloss.Width(word) <= w {
+				line += " " + word
+			} else {
+				out = append(out, line)
+				line = word
+			}
+		}
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// renderScrollableTab renders a title plus word-wrapped, vertically scrollable
+// text with a simple scrollbar on the right edge.
+func (m *SettingsModel) renderScrollableTab(width, height int, title, raw string) string {
+	innerW := width - 6 // borders + padding
+	innerH := height - 4
+	if innerH < 4 {
+		innerH = 4
+	}
+	lines := wrapText(raw, innerW)
+	maxScroll := len(lines) - innerH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.scroll > maxScroll {
+		m.scroll = maxScroll
+	}
+	if m.scroll < 0 {
+		m.scroll = 0
+	}
+	start := m.scroll
+	end := start + innerH
+	if end > len(lines) {
+		end = len(lines)
+	}
+	visible := lines[start:end]
+
+	body := strings.Join(visible, "\n")
+	if len(visible) < innerH {
+		body += strings.Repeat("\n", innerH-len(visible))
+	}
+
+	// Scrollbar
+	var sb strings.Builder
+	for i := 0; i < innerH; i++ {
+		if maxScroll == 0 {
+			sb.WriteString(ui.FaintStyle.Render("│"))
+		} else if i == int(float64(m.scroll)/float64(maxScroll)*float64(innerH-1)) {
+			sb.WriteString(ui.AccentStyle.Render("█"))
+		} else {
+			sb.WriteString(ui.FaintStyle.Render("│"))
+		}
+	}
+	content := lipgloss.JoinHorizontal(lipgloss.Top,
+		ui.SectionTitleStyle.Render(" "+title+" ")+"\n"+body,
+		" ", sb.String())
+	return content
 }
 
 // centerPad pads s with spaces so its display width equals targetW, centering
