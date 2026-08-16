@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,9 +13,20 @@ import (
 	"MusicLeCLI/ui"
 )
 
+//go:embed THIRD_PARTY_NOTICES.md
+var thirdPartyNotice string
+
+func printThirdPartyNotice() {
+	fmt.Print(thirdPartyNotice)
+}
+
 var version = "dev"
 var commit = ""
 var date = ""
+
+const bannerText = `MusicLeCLI — terminal music player
+Embedded download engine: yt-dlp, spotDL, FFmpeg (see THIRD_PARTY_NOTICES.md)
+`
 
 const helpText = `MusicLeCLI — terminal music player with download engine
 Usage:  MusicLeCLI.exe [--version] [--help]
@@ -59,8 +71,15 @@ func main() {
 			cfgDir, _ := os.UserConfigDir()
 			fmt.Printf(helpText, filepath.Join(cfgDir, "musicle"))
 			return
+		case "--license", "--notice", "--third-party":
+			printThirdPartyNotice()
+			return
 		}
 	}
+
+	// Print the third-party banner to stderr so it is visible in the launching
+	// terminal before the TUI takes over the screen.
+	fmt.Fprint(os.Stderr, bannerText)
 	cfgDir, err := os.UserConfigDir()
 	if err != nil {
 		cfgDir = os.TempDir()
