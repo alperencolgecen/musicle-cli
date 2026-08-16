@@ -6,6 +6,9 @@
 *.dylib
 musicle
 musicle.exe
+musicle-cli
+MusicLeCLI
+MusicleCLI*
 
 # Test binary, built with `go test -c`
 *.test
