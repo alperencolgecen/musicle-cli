@@ -1,54 +1,67 @@
 name: Release
 
+# Builds binaries for every platform and uploads them to the GitHub release
+# for the pushed tag. The release may already exist (created manually or by a
+# previous run) — `gh release upload` only appends assets, so this works either
+# way and never blocks on goreleaser creating the release.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v1.3.0)'
+        required: true
+        default: 'v1.3.0'
 
 permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  linux-amd64:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
-
       - uses: actions/setup-go@v5
         with:
           go-version: stable
           check-latest: true
-
       - name: Install Linux deps
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libasound2-dev pkg-config gcc
+      - name: Build (make build)
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
+        run: make build VERSION="${RAW#v}"
+      - name: Package
+        run: |
+          mkdir -p build/musicle-cli_Linux_x86_64
+          cp build/musicle-cli build/musicle-cli_Linux_x86_64/musicle-cli
+          cp README.md build/musicle-cli_Linux_x86_64/ 2>/dev/null || true
+          cd build && tar czf musicle-cli_Linux_x86_64.tar.gz musicle-cli_Linux_x86_64
+      - name: Upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" build/musicle-cli_Linux_x86_64.tar.gz
 
   linux-arm64:
-    needs: goreleaser
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
-
       - uses: actions/setup-go@v5
         with:
           go-version: stable
           check-latest: true
-
       - name: Build linux/arm64 via QEMU
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq qemu-user-static
@@ -57,56 +70,89 @@ jobs:
             -e CGO_ENABLED=1 \
             arm64v8/ubuntu:24.04 /bin/bash -c "
               apt-get update -qq && apt-get install -y -qq ca-certificates golang-go libasound2-dev
-              go build -ldflags='-s -w -X main.version=${GITHUB_REF_NAME#v} -X main.commit=${{ github.sha }} -X main.date=\$(date -u +%Y-%m-%d)' \
-                -o muscle-cli-linux-arm64 .
+              ./scripts/prepare-engine.sh linux
+              go build -tags engine_assets -ldflags='-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=\$(date -u +%Y-%m-%d)' \
+                -o musicle-cli-linux-arm64 .
             "
-
       - name: Package archive
         run: |
-          mkdir -p build/muscle-cli_Linux_arm64
-          cp muscle-cli-linux-arm64 build/muscle-cli_Linux_arm64/muscle-cli
-          cp README.md build/muscle-cli_Linux_arm64/
-          cd build && tar czf ../muscle-cli_Linux_arm64.tar.gz muscle-cli_Linux_arm64
-
+          mkdir -p build/musicle-cli_Linux_arm64
+          cp musicle-cli-linux-arm64 build/musicle-cli_Linux_arm64/musicle-cli
+          cp README.md build/musicle-cli_Linux_arm64/ 2>/dev/null || true
+          cd build && tar czf musicle-cli_Linux_arm64.tar.gz musicle-cli_Linux_arm64
       - name: Upload artifact
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.ref_name }}" muscle-cli_Linux_arm64.tar.gz
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" build/musicle-cli_Linux_arm64.tar.gz
 
-  appimage:
-    needs: goreleaser
-    runs-on: ubuntu-latest
-
+  windows:
+    strategy:
+      matrix:
+        arch: [amd64, "386", arm64]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
-
       - uses: actions/setup-go@v5
         with:
           go-version: stable
           check-latest: true
+      - name: Prepare engine (windows)
+        run: ./scripts/prepare-engine.sh windows
+      - name: Build
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          go build -tags engine_assets \
+            -ldflags="-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
+            -o musicle-cli-windows-${{ matrix.arch }}.exe .
+      - name: Package archive
+        run: |
+          mkdir -p build/musicle-cli_Windows_${{ matrix.arch }}
+          cp musicle-cli-windows-${{ matrix.arch }}.exe build/musicle-cli_Windows_${{ matrix.arch }}/
+          cp README.md build/musicle-cli_Windows_${{ matrix.arch }}/ 2>/dev/null || true
+          cd build && tar czf musicle-cli_Windows_${{ matrix.arch }}.tar.gz musicle-cli_Windows_${{ matrix.arch }}
+      - name: Upload artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" build/musicle-cli_Windows_${{ matrix.arch }}.tar.gz
 
+  appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libasound2-dev libfuse2 desktop-file-utils
-
       - name: Download appimagetool
         run: |
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
-
       - name: Build binary
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           CGO_ENABLED=1 go build \
-            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
-            -o muscle-cli-linux-x86_64.AppDir/usr/bin/musicle-cli .
-
+            -ldflags="-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
+            -o musicle-cli-linux-x86_64.AppDir/usr/bin/musicle-cli .
       - name: Prepare AppDir
         run: |
-          APPDIR=muscle-cli-linux-x86_64.AppDir
+          APPDIR=musicle-cli-linux-x86_64.AppDir
           mkdir -p "$APPDIR/usr/bin"
           mkdir -p "$APPDIR/usr/share/applications"
           mkdir -p "$APPDIR/usr/share/icons/hicolor/1024x1024/apps"
@@ -129,80 +175,78 @@ DESKTOP
           cp assets/MusicLe.png "$APPDIR/io.anomalyco.musicle-cli.png"
 
           desktop-file-validate "$APPDIR/io.anomalyco.musicle-cli.desktop"
-
       - name: Build AppImage
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          ./appimagetool -n muscle-cli-linux-x86_64.AppDir \
-            "musicle-cli_${GITHUB_REF_NAME#v}_x86_64.AppImage"
-
+          ./appimagetool -n musicle-cli-linux-x86_64.AppDir \
+            "musicle-cli_${RAW#v}_x86_64.AppImage"
       - name: Upload AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.ref_name }}" muscle-cli_*.AppImage
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" musicle-cli_*.AppImage
 
   macos-intel:
-    needs: goreleaser
     runs-on: macos-13
-
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
-
       - uses: actions/setup-go@v5
         with:
           go-version: stable
           check-latest: true
-
+      - name: Prepare engine (darwin)
+        run: ./scripts/prepare-engine.sh darwin
       - name: Build macOS (amd64)
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
-            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
-            -o muscle-cli-darwin-amd64 .
-
+          CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -tags engine_assets \
+            -ldflags="-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
+            -o musicle-cli-darwin-amd64 .
       - name: Package archive
         run: |
-          mkdir -p build/muscle-cli_macOS_x86_64
-          cp muscle-cli-darwin-amd64 build/muscle-cli_macOS_x86_64/muscle-cli
-          cp README.md build/muscle-cli_macOS_x86_64/
-          cd build && tar czf ../muscle-cli_macOS_x86_64.tar.gz muscle-cli_macOS_x86_64
-
+          mkdir -p build/musicle-cli_macOS_x86_64
+          cp musicle-cli-darwin-amd64 build/musicle-cli_macOS_x86_64/musicle-cli
+          cp README.md build/musicle-cli_macOS_x86_64/ 2>/dev/null || true
+          cd build && tar czf musicle-cli_macOS_x86_64.tar.gz musicle-cli_macOS_x86_64
       - name: Upload artifact
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.ref_name }}" muscle-cli_macOS_x86_64.tar.gz
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" build/musicle-cli_macOS_x86_64.tar.gz
 
   macos-arm:
-    needs: goreleaser
     runs-on: macos-14
-
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
-
       - uses: actions/setup-go@v5
         with:
           go-version: stable
           check-latest: true
-
+      - name: Prepare engine (darwin)
+        run: ./scripts/prepare-engine.sh darwin
       - name: Build macOS (arm64)
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build \
-            -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
-            -o muscle-cli-darwin-arm64 .
-
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -tags engine_assets \
+            -ldflags="-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
+            -o musicle-cli-darwin-arm64 .
       - name: Package archive
         run: |
-          mkdir -p build/muscle-cli_macOS_arm64
-          cp muscle-cli-darwin-arm64 build/muscle-cli_macOS_arm64/muscle-cli
-          cp README.md build/muscle-cli_macOS_arm64/
-          cd build && tar czf ../muscle-cli_macOS_arm64.tar.gz muscle-cli_macOS_arm64
-
+          mkdir -p build/musicle-cli_macOS_arm64
+          cp musicle-cli-darwin-arm64 build/musicle-cli_macOS_arm64/musicle-cli
+          cp README.md build/musicle-cli_macOS_arm64/ 2>/dev/null || true
+          cd build && tar czf musicle-cli_macOS_arm64.tar.gz musicle-cli_macOS_arm64
       - name: Upload artifact
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.ref_name }}" muscle-cli_macOS_arm64.tar.gz
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" build/musicle-cli_macOS_arm64.tar.gz
