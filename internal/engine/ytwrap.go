@@ -105,6 +105,9 @@ func downloadOne(ext *Extracted, url, outDir string, progress Progress) error {
 	}
 
 	// 3) ffmpeg: audio -> mp3 320k, attach cover as APIC.
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("çıktı dizini: %w", err)
+	}
 	outPath := filepath.Join(outDir, name+".mp3")
 	args := []string{"-y", "-i", audioFile}
 	if thumbFile != "" {

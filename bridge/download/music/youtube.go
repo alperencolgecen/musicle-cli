@@ -437,6 +437,23 @@ func downloadFromStream(pr *ParseResult, stream *StreamInfo, urlOrID string, cb 
 	return track, rawAudio, nil
 }
 
+// ytdlpCookieFlag returns the --cookies-from-browser Chrome argument pair only
+// when a Chrome/Chromium cookie store actually exists, so machines without
+// Google Chrome do not hard-fail (yt-dlp errors out on a missing profile).
+// Without a store we explicitly disable cookie extraction instead.
+func ytdlpCookieFlag() []string {
+	for _, p := range []string{
+		filepath.Join(os.Getenv("HOME"), ".config/google-chrome/Default/Cookies"),
+		filepath.Join(os.Getenv("HOME"), ".config/google-chrome/Cookies"),
+		filepath.Join(os.Getenv("HOME"), ".config/chromium/Default/Cookies"),
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return []string{"--cookies-from-browser", "chrome"}
+		}
+	}
+	return []string{"--no-cookies-from-browser"}
+}
+
 func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.TrackInfo, []byte, error) {
 	ytdlp := findYTDLP()
 	if ytdlp == "" {
@@ -459,13 +476,9 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 	}
 
 	jsonCtx, jsonCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	metaCmd := exec.CommandContext(jsonCtx, ytdlp,
-		"--dump-json",
-		"--no-warnings",
-		"--cookies-from-browser", "chrome",
-		"--extractor-args", "youtube:player_client=web",
-		watchURL,
-	)
+	metaArgs := append([]string{"--dump-json", "--no-warnings", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	metaArgs = append(metaArgs, watchURL)
+	metaCmd := exec.CommandContext(jsonCtx, ytdlp, metaArgs...)
 	var metaJSON bytes.Buffer
 	var metaStderr bytes.Buffer
 	metaCmd.Stdout = &metaJSON
@@ -501,15 +514,9 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, ytdlp,
-		"-f", "bestaudio[ext=webm]",
-		"-o", "-",
-		"--no-warnings",
-		"--no-playlist",
-		"--cookies-from-browser", "chrome",
-		"--extractor-args", "youtube:player_client=web",
-		watchURL,
-	)
+	dlArgs := append([]string{"-f", "bestaudio[ext=webm]", "-o", "-", "--no-warnings", "--no-playlist", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	dlArgs = append(dlArgs, watchURL)
+	cmd := exec.CommandContext(ctx, ytdlp, dlArgs...)
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -576,13 +583,9 @@ func DownloadYouTubeTrackDirectMP3(videoID string, cb download.ProgressCallback)
 	}
 
 	jsonCtx, jsonCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	metaCmd := exec.CommandContext(jsonCtx, ytdlp,
-		"--dump-json",
-		"--no-warnings",
-		"--cookies-from-browser", "chrome",
-		"--extractor-args", "youtube:player_client=web",
-		watchURL,
-	)
+	metaArgs := append([]string{"--dump-json", "--no-warnings", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	metaArgs = append(metaArgs, watchURL)
+	metaCmd := exec.CommandContext(jsonCtx, ytdlp, metaArgs...)
 	var metaJSON bytes.Buffer
 	var metaStderr bytes.Buffer
 	metaCmd.Stdout = &metaJSON
@@ -625,16 +628,9 @@ func DownloadYouTubeTrackDirectMP3(videoID string, cb download.ProgressCallback)
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, ytdlp,
-		"-x", "--audio-format", "mp3",
-		"--audio-quality", "0",
-		"-o", tmpMp3Name,
-		"--no-warnings",
-		"--no-playlist",
-		"--cookies-from-browser", "chrome",
-		"--extractor-args", "youtube:player_client=web",
-		watchURL,
-	)
+	dlArgs := append([]string{"-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", tmpMp3Name, "--no-warnings", "--no-playlist", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	dlArgs = append(dlArgs, watchURL)
+	cmd := exec.CommandContext(ctx, ytdlp, dlArgs...)
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
