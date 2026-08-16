@@ -127,7 +127,12 @@ DESKTOP
         chmod +x build/appimagetool
         cd build
         ./appimagetool --appimage-extract > /dev/null 2>&1 || true
-        ./squashfs-root/AppRun -n MusicLe.AppDir MusicleCLI.AppImage
+        # Hedef AppImage eski bir çalışan/mountlu sürüm olabilir (ETXTBSY);
+        # önce geçici isimle üret, sonra mv -f ile üzerine yaz.
+        TMP_APPIMAGE=MusicleCLI.build.AppImage
+        rm -f "$TMP_APPIMAGE"
+        ./squashfs-root/AppRun -n MusicLe.AppDir "$TMP_APPIMAGE"
+        mv -f "$TMP_APPIMAGE" MusicleCLI.AppImage
         rm -rf squashfs-root appimagetool MusicLe.AppDir musicle-cli
         cd ..
         echo "==> build/MusicleCLI.AppImage"
