@@ -130,26 +130,29 @@ musicle-cli
 ### Build from Source
 
 The Python download engine (CPython venv + **spotDL**, **yt-dlp** and a static
-**FFmpeg**) is embedded directly into the binary via `go:embed`, so a fresh
-clone already contains everything needed — no extra downloads at runtime.
+**FFmpeg**) is embedded into the binary via `go:embed` (`-tags engine_assets`),
+so the released binary is fully self-contained — end users never download
+anything extra. The engine assets themselves are **not** committed to the repo;
+they are generated at build time by `scripts/prepare-engine.sh` (needs `python3`).
 
 ```bash
 git clone https://github.com/alperencolgecen/musicle-cli.git
 cd musicle-cli
 
-# Build (the embedded engine is baked in automatically)
-go build -o musicle-cli .
+# Recommended: builds the embedded engine, then bakes it into the binary
+make build
 
-# Cross-platform:
-GOOS=windows GOARCH=amd64 go build -o musicle-cli.exe .   # Windows
-GOOS=darwin GOARCH=amd64 go build -o musicle-cli .         # macOS Intel
-GOOS=linux GOARCH=amd64 go build -o musicle-cli .          # Linux
+# …or manually:
+make engine                 # prepares internal/engine/engine_venv + engine_ffmpeg
+CGO_ENABLED=1 go build -tags engine_assets -o musicle-cli .
 ```
 
 > **Note:** the audio player backend (oto) needs CGO + ALSA dev headers, so the
 > build is `CGO_ENABLED=1` by default. On Fedora: `sudo dnf install gcc alsa-lib-devel`.
-> To rebuild the embedded engine from scratch (e.g. after bumping versions in
-> `assets/engine/manifest.yaml`), run `make engine` once before `go build`.
+> A plain `go build` (without `-tags engine_assets`) still compiles, but the
+> embedded engine is omitted and the downloader falls back to the legacy method
+> at runtime. To rebuild the engine from scratch (e.g. after bumping versions in
+> `assets/engine/manifest.yaml`), run `make engine` again before building.
 
 ---
 

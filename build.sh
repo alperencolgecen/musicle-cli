@@ -30,9 +30,11 @@ prepare_engine() {
   fi
 }
 
-# engine_tag artık gerekmez: govulmotor varsayilan olarak go:embed ile binary'ye
-# gomulur. Hazirlik adimi (prepare_engine) varliklari internal/engine altina
-# kopyalar ve build bunlari otomatik gozer.
+# Govulmotor varliklari (internal/engine/engine_venv + engine_ffmpeg) repoya
+# islenmez; .gitignore'da tutulur. `prepare_engine` adimi onlari uretip
+# internal/engine altina kopyalar, ardindan `go build -tags engine_assets`
+# go:embed ile binary'ye gomer. Etiketsiz derlemede govulmotor gömülmez ve
+# bridge calisma aninda legacy yonteme duser.
 
 echo "Select target OS:"
 echo "1) Linux"
@@ -52,7 +54,7 @@ case "$os_choice" in
     mkdir -p build
     echo "==> Building binary..."
     prepare_engine linux
-    CGO_ENABLED=1 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli .
+    CGO_ENABLED=1 $GO build -tags engine_assets -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli .
 
     case "$fmt" in
       1)
@@ -179,7 +181,7 @@ SPEC
     mkdir -p build
     echo "==> Building..."
     prepare_engine windows
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli.exe .
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build -tags engine_assets -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli.exe .
     if [ "$fmt" = "2" ]; then
       mkdir -p build/musicle-cli_Windows_x86_64
       cp build/musicle-cli.exe build/musicle-cli_Windows_x86_64/
@@ -197,7 +199,7 @@ SPEC
     mkdir -p build
     echo "==> Building..."
     prepare_engine darwin
-    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli-darwin .
+    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $GO build -tags engine_assets -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli-darwin .
     if [ "$fmt" = "1" ]; then
       mkdir -p build/musicle-cli_macOS_x86_64
       cp build/musicle-cli-darwin build/musicle-cli_macOS_x86_64/musicle-cli

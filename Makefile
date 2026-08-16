@@ -18,10 +18,10 @@ engine:
 	./scripts/prepare-engine.sh linux
 
 # Full binary build (requires CGO + ALSA dev headers for the audio player).
-# Depends on `engine` so the embedded venv+ffmpeg are prepared and baked into
-# the binary — the resulting file is fully self-contained for end users.
+# Depends on `engine` so the embedded venv+ffmpeg are prepared, then baked in
+# with -tags engine_assets. The result is fully self-contained for end users.
 build: engine
-	CGO_ENABLED=1 $(GO) build $(LDFLAGS) -o build/musicle-cli .
+	CGO_ENABLED=1 $(GO) build -tags engine_assets $(LDFLAGS) -o build/musicle-cli .
 
 # Vet the packages that do not depend on the audio player (buildable anywhere).
 vet:
