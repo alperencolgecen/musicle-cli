@@ -1043,8 +1043,14 @@ func (m *HomeModel) togglePlayPause() {
 
 func (m *HomeModel) adjustVolume(delta float64) {
 	v := state.Current.Player.Volume + delta
-	if v > 1 {
-		v = 1
+	// Respect the Sound → Volume limit: the app may only use up to that
+	// percentage of the device's normal volume.
+	maxV := float64(state.Current.SoundVolumeLimit) / 100.0
+	if maxV <= 0 || maxV > 1 {
+		maxV = 1
+	}
+	if v > maxV {
+		v = maxV
 	} else if v < 0 {
 		v = 0
 	}

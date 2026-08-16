@@ -14,6 +14,9 @@ import (
 	"github.com/gopxl/beep/flac"
 	"github.com/gopxl/beep/mp3"
 	"github.com/gopxl/beep/speaker"
+
+	"MusicLeCLI/internal/audio"
+	"MusicLeCLI/state"
 	"github.com/gopxl/beep/wav"
 )
 
@@ -97,6 +100,22 @@ type playerEngine struct {
 var player = &playerEngine{vol: 0.7}
 
 func initPlayer() error {
+	// Best-effort: route the audio backend to the user's saved output device
+	// before it initialises. The backend (beep→oto/ALSA) reads these env vars
+	// at init time, so this only takes effect on startup — switching devices
+	// live would require a backend re-init that the player does not support.
+	if state.Current.SoundOutputDevice != "" {
+		for _, d := range audio.ListOutputDevices() {
+			if d.Name == state.Current.SoundOutputDevice {
+				for _, e := range audio.RoutingEnv(d.Name, d.Card) {
+					if kv := strings.SplitN(e, "=", 2); len(kv) == 2 {
+						os.Setenv(kv[0], kv[1])
+					}
+				}
+				break
+			}
+		}
+	}
 	sr := beep.SampleRate(44100)
 	if err := speaker.Init(sr, sr.N(time.Second/10)); err != nil {
 		return fmt.Errorf("speaker init: %w", err)
