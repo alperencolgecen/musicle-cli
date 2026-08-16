@@ -105,6 +105,18 @@ var allTranslations = map[string]map[state.Language]string{
 		state.LangEnglish: "About",
 		state.LangTurkish: "Hakkında",
 	},
+	"sound.no_devices": {
+		state.LangEnglish: "No output devices detected",
+		state.LangTurkish: "Çıkış cihazı bulunamadı",
+	},
+	"sound.volume_limit": {
+		state.LangEnglish: "Volume limit",
+		state.LangTurkish: "Ses limiti",
+	},
+	"sound.hint": {
+		state.LangEnglish: "[↑↓] Device  [←→] Limit  [Enter] Save",
+		state.LangTurkish: "[↑↓] Cihaz  [←→] Limit  [Enter] Kaydet",
+	},
 	"settings.f3_hint": {
 		state.LangEnglish: "[F3] switch tab",
 		state.LangTurkish: "[F3] sekme değiştir",

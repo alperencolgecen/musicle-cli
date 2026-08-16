@@ -1,12 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"MusicLeCLI/internal/audio"
 	"MusicLeCLI/state"
 	"MusicLeCLI/ui"
 )
@@ -50,6 +53,11 @@ type SettingsModel struct {
 	rightFocused bool
 	// focus is kept in sync with MainModel F1 player-bar cycling (-1 = bar).
 	focus int
+
+	// Sound tab state
+	soundDevices []audio.Device // enumerated output sinks
+	soundSel     int            // highlighted device index
+	volLimit     int            // 0-100, mirrors state.Current.SoundVolumeLimit
 }
 
 func NewSettingsModel() *SettingsModel {
@@ -64,6 +72,20 @@ func NewSettingsModel() *SettingsModel {
 		if n == state.Current.Theme {
 			m.themeIdx = i
 			break
+		}
+	}
+	m.volLimit = state.Current.SoundVolumeLimit
+	if m.volLimit <= 0 || m.volLimit > 100 {
+		m.volLimit = 100
+	}
+	m.soundDevices = audio.ListOutputDevices()
+	// Pre-select the configured device if present.
+	if state.Current.SoundOutputDevice != "" {
+		for i, d := range m.soundDevices {
+			if d.Name == state.Current.SoundOutputDevice {
+				m.soundSel = i
+				break
+			}
 		}
 	}
 	return m
@@ -91,6 +113,25 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc", "tab", "shift+tab":
 				m.rightFocused = false
 				return m, nil
+			}
+			// The Sound tab mixes a device list (up/down) with a volume-limit
+			// slider (left/right), so it needs its own key map.
+			if settingsTabs[m.activeTab].id == "tab.sound" {
+				switch msg.String() {
+				case "up", "k":
+					m.moveSound(-1)
+				case "down", "j":
+					m.moveSound(1)
+				case "left", "h":
+					m.adjustVolLimit(-5)
+				case "right", "l":
+					m.adjustVolLimit(5)
+				case "enter":
+					return m, m.applyActiveTab()
+				}
+				return m, nil
+			}
+			switch msg.String() {
 			case "up", "k":
 				m.moveSelection(-1)
 				return m, nil
@@ -124,7 +165,7 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // hasSelectionList reports whether the active tab owns a navigable list.
 func (m *SettingsModel) hasSelectionList() bool {
 	switch settingsTabs[m.activeTab].id {
-	case "tab.theme", "tab.language":
+	case "tab.theme", "tab.language", "tab.sound":
 		return true
 	}
 	return false
@@ -145,6 +186,27 @@ func (m *SettingsModel) moveSelection(dir int) {
 	}
 }
 
+// moveSound shifts the highlighted device list in the Sound tab.
+func (m *SettingsModel) moveSound(dir int) {
+	n := len(m.soundDevices)
+	if n == 0 {
+		return
+	}
+	m.soundSel = (m.soundSel + dir + n) % n
+}
+
+// adjustVolLimit changes the volume cap by step, clamped to 5-100.
+func (m *SettingsModel) adjustVolLimit(step int) {
+	v := m.volLimit + step
+	if v < 5 {
+		v = 5
+	}
+	if v > 100 {
+		v = 100
+	}
+	m.volLimit = v
+}
+
 // applyActiveTab commits the change for the currently visible tab, if any.
 func (m *SettingsModel) applyActiveTab() tea.Cmd {
 	id := settingsTabs[m.activeTab].id
@@ -159,6 +221,24 @@ func (m *SettingsModel) applyActiveTab() tea.Cmd {
 		_ = state.Current.SaveConfig()
 		ui.ApplyTheme(theme)
 		return func() tea.Msg { return ThemeChangedMsg{} }
+	case "tab.sound":
+		if len(m.soundDevices) > 0 && len(m.soundDevices) > m.soundSel {
+			state.Current.SoundOutputDevice = m.soundDevices[m.soundSel].Name
+		} else {
+			state.Current.SoundOutputDevice = ""
+		}
+		state.Current.SoundVolumeLimit = m.volLimit
+		_ = state.Current.SaveConfig()
+		// Best-effort: route the audio backend to the chosen sink on next init.
+		if len(m.soundDevices) > m.soundSel && m.soundSel >= 0 {
+			d := m.soundDevices[m.soundSel]
+			for _, e := range audio.RoutingEnv(d.Name, d.Card) {
+				kv := strings.SplitN(e, "=", 2)
+				if len(kv) == 2 {
+					_ = os.Setenv(kv[0], kv[1])
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -301,6 +381,8 @@ func (m *SettingsModel) renderRightPanel(width int, height int) string {
 		content = m.renderThemeTab(width)
 	case "tab.language":
 		content = m.renderLangTab(width)
+	case "tab.sound":
+		content = m.renderSoundTab(width)
 	default:
 		content = m.renderPlaceholder(width)
 	}
@@ -361,6 +443,53 @@ func (m *SettingsModel) renderPlaceholder(width int) string {
 	title := ui.SectionTitleStyle.Render(" " + m.tabLabel(m.activeTab) + " ")
 	soon := ui.DimStyle.Render("  " + Tr("common.coming_soon"))
 	return strings.Join([]string{title, "", soon}, "\n")
+}
+
+// renderSoundTab lists output devices with a Bluetooth/Wired badge and a
+// volume-limit slider. Up/Down move the selection; Left/Right change the
+// limit (5-100%). Enter saves.
+func (m *SettingsModel) renderSoundTab(width int) string {
+	title := ui.SectionTitleStyle.Render(" " + Tr("tab.sound") + " ")
+	lines := []string{title, ""}
+
+	if len(m.soundDevices) == 0 {
+		lines = append(lines, ui.DimStyle.Render("  "+Tr("sound.no_devices")))
+	} else {
+		for i, d := range m.soundDevices {
+			badge := ui.DimStyle.Render("[Kablolu]")
+			if d.Type == "bluetooth" {
+				badge = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Render("[Bluetooth]")
+			}
+			line := "  " + badge + "  " + d.Description
+			if m.rightFocused && i == m.soundSel {
+				line = ui.AccentStyle.Bold(true).Render("> ") + badge + "  " + ui.WhiteStyle.Bold(true).Render(d.Description)
+			}
+			lines = append(lines, line)
+		}
+	}
+
+	// Volume limit slider
+	lines = append(lines, "", ui.SectionTitleStyle.Render(" "+Tr("sound.volume_limit")+" "))
+	bar := m.volumeBar(m.volLimit, width-6)
+	lines = append(lines, "  "+bar+"  "+ui.WhiteStyle.Render(fmt.Sprintf("%d%%", m.volLimit)))
+	lines = append(lines, "", ui.DimStyle.Render("  "+Tr("sound.hint")))
+
+	return strings.Join(lines, "\n")
+}
+
+// volumeBar renders a simple [=====     ] progress bar of the given percent.
+func (m *SettingsModel) volumeBar(pct, w int) string {
+	if w < 10 {
+		w = 10
+	}
+	filled := int(float64(pct) / 100.0 * float64(w))
+	if filled > w {
+		filled = w
+	}
+	if filled < 0 {
+		filled = 0
+	}
+	return "[" + strings.Repeat("=", filled) + strings.Repeat(" ", w-filled) + "]"
 }
 
 // centerPad pads s with spaces so its display width equals targetW, centering
