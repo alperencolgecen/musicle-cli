@@ -55,5 +55,20 @@ GitHub: @colgecen
 
 Bu araç neye hizmet eder?
 Kullanıcının kendi kişisel müzik kütüphanesini Spotify ve YouTube gibi
-kaynaklardan indirip yerel olarak yönetmesine yarar.`
+kaynaklardan indirip yerel olarak yönetmesine yarar.
+
+Neye hizmet eder (amaç)?
+Mevcut müzik akış platformlarındaki parçaları kendi kontrolünüzdeki bir
+yerel arşive dönüştürmek; çevrimdışı dinleme, düzenleme ve kalıcı saklama
+sağlamak. Musicle bir akış servisi değildir, bir kişisel arşiv yöneticisidir.
+
+Temel özellikler
+- Spotify ve YouTube bağlantı/arama desteği ile parça ve çalma listesi
+  indirme.
+- Otomatik MP3 dönüştürme, ID3 etiketleme ve kapak resmi işleme.
+- Profil ve çalma listesi yönetimi; şarkılar song_list.txt ile izlenir.
+- Tema ve dil seçenekleri (çoklu dil desteği).
+- Ses sekmesi: çıkış cihazı seçimi ve ses limiti ayarı.
+- Bu politika ve hakkında ekranı dahil ayarlar yönetimi.
+- Spektrum/görselleştirme ve kayan şarkı sözü gibi oynatıcı özellikleri.`
 }
