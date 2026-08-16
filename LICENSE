@@ -199,3 +199,9 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+   THIRD-PARTY NOTICES:
+
+   This project bundles and depends on third-party software (yt-dlp, FFmpeg,
+   and the Go dependencies listed in go.mod). Their licenses and attribution
+   notices are documented in THIRD_PARTY_NOTICES.md.

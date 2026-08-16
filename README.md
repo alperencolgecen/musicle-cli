@@ -357,6 +357,10 @@ the user cache directory and invoked directly (no Python):
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — The Unlicense
 - **[FFmpeg](https://ffmpeg.org/)** — LGPL-2.1+ (with GPL components)
 
+It additionally depends on the Go libraries listed in [`go.mod`](go.mod)
+(bubbletea, lipgloss, oto, gopxl/beep, ncruces/zenity, and their
+transitive dependencies).
+
 Full license texts and disclaimers are in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
