@@ -21,7 +21,7 @@ var ThemeColors = map[string]string{
 }
 
 var (
-	ColorBackground = lipgloss.Color("#121212")
+	ColorBackground = lipgloss.Color("#000000")
 	ColorSurface    = lipgloss.Color("#181818")
 	ColorBorder     = lipgloss.Color("#282828")
 	ColorAccent     = lipgloss.Color("#1DB954")
@@ -36,24 +36,24 @@ var (
 
 // Styles are mutable — call ApplyTheme() to rebuild
 var (
-	AppStyle         lipgloss.Style
-	AccentStyle      lipgloss.Style
-	WhiteStyle       lipgloss.Style
-	DimStyle         lipgloss.Style
-	ErrorStyle       lipgloss.Style
-	OrangeStyle      lipgloss.Style
-	BoldStyle        lipgloss.Style
-	HeaderStyle      lipgloss.Style
-	LogoStyle        lipgloss.Style
-	LogoAccentStyle  lipgloss.Style
-	BorderStyle      lipgloss.Style
-	AccentBorderStyle  lipgloss.Style
-	InputStyle       lipgloss.Style
-	FocusedInputStyle  lipgloss.Style
-	SelectedRowStyle lipgloss.Style
-	NavActiveStyle   lipgloss.Style
-	NavInactiveStyle lipgloss.Style
-	ButtonStyle      lipgloss.Style
+	AppStyle            lipgloss.Style
+	AccentStyle         lipgloss.Style
+	WhiteStyle          lipgloss.Style
+	DimStyle            lipgloss.Style
+	ErrorStyle          lipgloss.Style
+	OrangeStyle         lipgloss.Style
+	BoldStyle           lipgloss.Style
+	HeaderStyle         lipgloss.Style
+	LogoStyle           lipgloss.Style
+	LogoAccentStyle     lipgloss.Style
+	BorderStyle         lipgloss.Style
+	AccentBorderStyle   lipgloss.Style
+	InputStyle          lipgloss.Style
+	FocusedInputStyle   lipgloss.Style
+	SelectedRowStyle    lipgloss.Style
+	NavActiveStyle      lipgloss.Style
+	NavInactiveStyle    lipgloss.Style
+	ButtonStyle         lipgloss.Style
 	AccentButtonStyle   lipgloss.Style
 	ErrorButtonStyle    lipgloss.Style
 	SectionTitleStyle   lipgloss.Style
@@ -81,123 +81,123 @@ func InitStyles() {
 	BoldStyle = lipgloss.NewStyle().Bold(true)
 
 	HeaderStyle = lipgloss.NewStyle().
-			Background(ColorBackground).
-			Foreground(ColorPrimary).
-			Bold(true)
+		Background(ColorBackground).
+		Foreground(ColorPrimary).
+		Bold(true)
 
 	LogoStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorPrimary)
+		Bold(true).
+		Foreground(ColorPrimary)
 
 	LogoAccentStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorAccent)
+		Bold(true).
+		Foreground(ColorAccent)
 
 	BorderStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorBorder)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorBorder)
 
 	AccentBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorAccent)
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorAccent)
 
 	InputStyle = lipgloss.NewStyle().
-			Background(ColorSurface).
-			Foreground(ColorPrimary).
-			Padding(0, 1)
+		Background(ColorSurface).
+		Foreground(ColorPrimary).
+		Padding(0, 1)
 
 	FocusedInputStyle = lipgloss.NewStyle().
-				Background(ColorSurface).
-				Foreground(ColorPrimary).
-				Border(lipgloss.NormalBorder()).
-				BorderForeground(ColorAccent).
-				Padding(0, 1)
+		Background(ColorSurface).
+		Foreground(ColorPrimary).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(ColorAccent).
+		Padding(0, 1)
 
 	SelectedRowStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#1E3223")).
-				Foreground(ColorPrimary).
-				Bold(true)
+		Background(lipgloss.Color("#1E3223")).
+		Foreground(ColorPrimary).
+		Bold(true)
 
 	NavActiveStyle = lipgloss.NewStyle().
-			Background(ColorAccent).
-			Foreground(ColorBlack).
-			Bold(true).
-			Padding(0, 2)
+		Background(ColorAccent).
+		Foreground(ColorBlack).
+		Bold(true).
+		Padding(0, 2)
 
 	NavInactiveStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#282828")).
-				Foreground(ColorPrimary).
-				Padding(0, 2)
+		Background(lipgloss.Color("#282828")).
+		Foreground(ColorPrimary).
+		Padding(0, 2)
 
 	ButtonStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#282828")).
-			Foreground(ColorAccent).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#282828")).
-			Padding(0, 2)
+		Background(lipgloss.Color("#282828")).
+		Foreground(ColorAccent).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#282828")).
+		Padding(0, 2)
 
 	AccentButtonStyle = lipgloss.NewStyle().
-				Background(ColorAccent).
-				Foreground(ColorBlack).
-				Bold(true).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorAccent).
-				Padding(0, 2)
+		Background(ColorAccent).
+		Foreground(ColorBlack).
+		Bold(true).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorAccent).
+		Padding(0, 2)
 
 	ErrorButtonStyle = lipgloss.NewStyle().
-				Background(ColorError).
-				Foreground(ColorPrimary).
-				Bold(true).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorError).
-				Padding(0, 2)
+		Background(ColorError).
+		Foreground(ColorPrimary).
+		Bold(true).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorError).
+		Padding(0, 2)
 
 	FocusedButtonStyle = lipgloss.NewStyle().
-				Background(ColorAccent).
-				Foreground(ColorBlack).
-				Bold(true).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorPrimary).
-				Padding(0, 2)
+		Background(ColorAccent).
+		Foreground(ColorBlack).
+		Bold(true).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorPrimary).
+		Padding(0, 2)
 
 	FocusedOutlineStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#282828")).
-				Foreground(ColorAccent).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorPrimary).
-				Padding(0, 2)
+		Background(lipgloss.Color("#282828")).
+		Foreground(ColorAccent).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorPrimary).
+		Padding(0, 2)
 
 	SectionTitleStyle = lipgloss.NewStyle().
-				Foreground(ColorAccent).
-				Bold(true).
-				Padding(0, 1)
+		Foreground(ColorAccent).
+		Bold(true).
+		Padding(0, 1)
 
 	SeparatorStyle = lipgloss.NewStyle().
-			Foreground(ColorBorder).
-			Render(strings.Repeat("-", 40))
+		Foreground(ColorBorder).
+		Render(strings.Repeat("-", 40))
 
 	SurfaceStyle = lipgloss.NewStyle().
-			Background(ColorSurface).
-			Padding(0, 1)
+		Background(ColorSurface).
+		Padding(0, 1)
 
 	FaintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#666666"))
+		Foreground(lipgloss.Color("#666666"))
 
 	GreenDotStyle = lipgloss.NewStyle().
-			Foreground(ColorAccent).
-			Render("o")
+		Foreground(ColorAccent).
+		Render("o")
 
 	DimDotStyle = lipgloss.NewStyle().
-			Foreground(ColorBorder).
-			Render("o")
+		Foreground(ColorBorder).
+		Render("o")
 
 	SongNumStyle = lipgloss.NewStyle().
-			Foreground(ColorSecondary).
-			Width(3).
-			Align(lipgloss.Right)
+		Foreground(ColorSecondary).
+		Width(3).
+		Align(lipgloss.Right)
 
 	SelectedBgStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#1E3223"))
+		Background(lipgloss.Color("#1E3223"))
 }
 
 // ApplyTheme updates ColorAccent and rebuilds all styles
@@ -389,4 +389,3 @@ func VolumeBars(level float64, n int) string {
 	}
 	return out.String()
 }
-

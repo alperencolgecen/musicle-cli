@@ -11,6 +11,7 @@ import (
 	"MusicLeCLI/bridge"
 	"MusicLeCLI/components"
 	"MusicLeCLI/state"
+	"MusicLeCLI/ui"
 )
 
 type StartDownloadMsg struct {
@@ -514,6 +515,12 @@ func (m *MainModel) View() string {
 	if m.showLangModal {
 		modal := renderLangModal(m.lang)
 		full = placeOverlay(full, modal, m.width)
+	}
+
+	// Tüm ekranı saf siyah arka planla kapla; böylece uygulama kendi penceresinde
+	// (3 işletim sisteminde de) terminal temasından bağımsız olarak siyah açılır.
+	if m.height > 0 {
+		full = ui.AppStyle.Copy().Width(m.width).Height(m.height).Render(full)
 	}
 
 	return full
