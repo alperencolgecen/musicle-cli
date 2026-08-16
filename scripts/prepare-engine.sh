@@ -26,17 +26,34 @@ echo "==> Python venv: $VENV"
 echo "==> ffmpeg dir:  $FFMPEG_DIR"
 
 # ---------- Python venv ----------
+# Resolve the interpreter path according to the target OS layout so we never
+# fall back to a Windows-style Scripts/python.exe on Linux (or vice versa).
+venv_python() {
+    case "$OS_TARGET" in
+        windows) echo "$VENV/Scripts/python.exe" ;;
+        *)       echo "$VENV/bin/python" ;;
+    esac
+}
+
 if [ ! -d "$VENV" ]; then
     echo "==> Creating Python virtualenv..."
     python3 -m venv "$VENV"
 else
-    echo "==> Reusing existing venv at $VENV"
+    echo "==> Existing venv found at $VENV"
 fi
 
-PYBIN="$VENV/bin/python"
+PYBIN="$(venv_python)"
 if [ ! -x "$PYBIN" ]; then
-    # Windows layout (called by CI / cross prep)
-    PYBIN="$VENV/Scripts/python.exe"
+    echo "==> venv python kullanılamaz ($PYBIN), venv yeniden oluşturuluyor..."
+    rm -rf "$VENV"
+    python3 -m venv "$VENV"
+    PYBIN="$(venv_python)"
+fi
+
+if [ ! -x "$PYBIN" ]; then
+    echo "ERROR: venv python hâlâ bulunamadı: $PYBIN" >&2
+    echo "python3 kurulu mu? (gerekirse: sudo dnf install python3)" >&2
+    exit 1
 fi
 
 echo "==> Upgrading pip..."
