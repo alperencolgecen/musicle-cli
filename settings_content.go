@@ -70,5 +70,23 @@ Temel özellikler
 - Tema ve dil seçenekleri (çoklu dil desteği).
 - Ses sekmesi: çıkış cihazı seçimi ve ses limiti ayarı.
 - Bu politika ve hakkında ekranı dahil ayarlar yönetimi.
-- Spektrum/görselleştirme ve kayan şarkı sözü gibi oynatıcı özellikleri.`
+- Spektrum/görselleştirme ve kayan şarkı sözü gibi oynatıcı özellikleri.
+
+Kullanılan 3. taraf uygulamalar ve kütüphaneler
+Dış araçlar:
+- yt-dlp: YouTube/Spotify bağlantılarından ses akışı çekmek için kullanılan
+  açık kaynaklı indirme motoru.
+- ffmpeg (statik): indirilen sesi MP3'e dönüştürme, yeniden örnekleme ve
+  kapak/resim işleme için.
+- Spotify: şarkı/çalma listesi meta verisi ve arama için veri kaynağı.
+
+Go kütüphaneleri:
+- charmbracelet/bubbletea + lipgloss: terminal kullanıcı arayüzü (TUI).
+- gopxl/beep + ebitengine/oto: ses çalma ve ses efektleri.
+- ncruces/zenity: masaüstü dosya/iletİşim kutuları.
+- atotto/clipboard: pano desteği.
+- dhowden/tag: ID3 etiket okuma/yazma.
+- mewkiz/flac: FLAC çözümleme.
+- Diğer bağımlılıklar ve lisanslar README.md ve LICENSE dosyalarında
+  belgelenmiştir.`
 }
