@@ -7,8 +7,6 @@
 GO ?= go
 VERSION ?= 1.0.0
 
-# Embed the prepared Python engine (venv + ffmpeg) into the binary.
-ENGINE_TAG := -tags engine_assets
 LDFLAGS := -ldflags="-s -w -X main.version=$(VERSION)"
 
 .PHONY: all engine build vet test check clean
@@ -23,7 +21,7 @@ engine:
 # Depends on `engine` so the embedded venv+ffmpeg are prepared and baked into
 # the binary — the resulting file is fully self-contained for end users.
 build: engine
-	CGO_ENABLED=1 $(GO) build $(ENGINE_TAG) $(LDFLAGS) -o build/musicle-cli .
+	CGO_ENABLED=1 $(GO) build $(LDFLAGS) -o build/musicle-cli .
 
 # Vet the packages that do not depend on the audio player (buildable anywhere).
 vet:

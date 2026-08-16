@@ -129,18 +129,27 @@ musicle-cli
 
 ### Build from Source
 
+The Python download engine (CPython venv + **spotDL**, **yt-dlp** and a static
+**FFmpeg**) is embedded directly into the binary via `go:embed`, so a fresh
+clone already contains everything needed — no extra downloads at runtime.
+
 ```bash
 git clone https://github.com/alperencolgecen/musicle-cli.git
-cd muscle-cli
+cd musicle-cli
 
-# Build (pure Go, no CGO required)
-go build -o muscle-cli .
+# Build (the embedded engine is baked in automatically)
+go build -o musicle-cli .
 
 # Cross-platform:
-GOOS=windows GOARCH=amd64 go build -o muscle-cli.exe .   # Windows
-GOOS=darwin GOARCH=amd64 go build -o muscle-cli .         # macOS Intel
-GOOS=linux GOARCH=amd64 go build -o muscle-cli .          # Linux
+GOOS=windows GOARCH=amd64 go build -o musicle-cli.exe .   # Windows
+GOOS=darwin GOARCH=amd64 go build -o musicle-cli .         # macOS Intel
+GOOS=linux GOARCH=amd64 go build -o musicle-cli .          # Linux
 ```
+
+> **Note:** the audio player backend (oto) needs CGO + ALSA dev headers, so the
+> build is `CGO_ENABLED=1` by default. On Fedora: `sudo dnf install gcc alsa-lib-devel`.
+> To rebuild the embedded engine from scratch (e.g. after bumping versions in
+> `assets/engine/manifest.yaml`), run `make engine` once before `go build`.
 
 ---
 
@@ -332,6 +341,17 @@ Contributions are welcome! Please see our [contributing guidelines](CONTRIBUTING
 ## 📜 License
 
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+The binary also bundles third-party components that are extracted at runtime into
+the user cache directory and invoked via the embedded Python interpreter:
+
+- **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — The Unlicense
+- **[spotDL](https://github.com/spotDL/spotify-downloader)** — MIT License
+- **[FFmpeg](https://ffmpeg.org/)** — LGPL-2.1+ (with GPL components)
+- **CPython** (embedded interpreter) — PSF License
+
+Full license texts and disclaimers are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 

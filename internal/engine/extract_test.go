@@ -7,13 +7,18 @@ import (
 	"testing"
 )
 
-// TestExtractStubBuild verifies that without the engine_assets tag the package
-// returns the documented error instead of panicking.
-func TestExtractStubBuild(t *testing.T) {
-	if _, err := Extract(); err == nil {
-		t.Skip("binary built with engine_assets; skipping stub probe")
-	} else if err != ErrNoEmbeddedAssets {
-		t.Fatalf("expected ErrNoEmbeddedAssets, got %v", err)
+// TestExtractSucceedsWhenEmbedded verifies the full extract path when the engine
+// assets are embedded (i.e. internal/engine/engine_venv and engine_ffmpeg are
+// present at compile time). It is a no-op on a checkout where the assets have
+// not been prepared/committed, because the package would not compile without
+// them.
+func TestExtractSucceedsWhenEmbedded(t *testing.T) {
+	ext, err := Extract()
+	if err != nil {
+		t.Skipf("engine assets not embedded in this build: %v", err)
+	}
+	if ext == nil || ext.PythonBin == "" || ext.SpotdlBin == "" || ext.YtdlpBin == "" {
+		t.Fatal("Extract returned incomplete locations")
 	}
 }
 

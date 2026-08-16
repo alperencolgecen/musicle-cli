@@ -22,9 +22,9 @@ type Extracted struct {
 	SitePackages string // PYTHONPATH entry: venv/lib/python*/site-packages
 }
 
-// ErrNoEmbeddedAssets is defined in embed_assets.go (engine_assets build) or
-// embed_stub.go (default build) so the same identifier is available to all
-// callers regardless of build tag.
+// ErrNoEmbeddedAssets is defined in embed_assets.go (always compiled) so the
+// same identifier is available to all callers. It is returned by Extract() when
+// the embedded engine assets are missing or corrupt.
 
 // cacheVersion must match the value written by scripts/prepare-engine.sh.
 const cacheVersion = "engine-v1"
@@ -42,8 +42,8 @@ var (
 // the embedded venv + ffmpeg to UserCacheDir on first call. Subsequent calls
 // return the cached result.
 //
-// If the binary was compiled without the `engine_assets` build tag, Extract
-// returns ErrNoEmbeddedAssets.
+// If the embedded engine assets are absent or corrupt, Extract returns
+// ErrNoEmbeddedAssets.
 func Extract() (*Extracted, error) {
 	extractOnce.Do(func() {
 		extracted, extractErr = doExtract()

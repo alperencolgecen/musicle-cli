@@ -27,8 +27,8 @@ func isSpotifyURL(url string) bool {
 }
 
 // downloadYouTube downloads a YouTube URL using the embedded engine when
-// available, falling back to the legacy pure-Go pipeline if the engine
-// binary was not embedded (e.g. dev builds without the engine_assets tag).
+// available, falling back to the legacy pure-Go pipeline if the embedded
+// engine is unavailable (assets missing or extraction failed).
 func downloadYouTube(url, outputDir string) *Result {
 	if url == "" {
 		return &Result{Status: "error", Error: "invalid URL"}

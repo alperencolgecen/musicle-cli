@@ -4,9 +4,10 @@
 the following third-party projects. They are extracted at runtime into the
 user cache directory and invoked via an embedded Python interpreter.
 
-When the binary is built **without** the `engine_assets` build tag, these
-components are not bundled and the application falls back to its legacy
-pure-Go download pipeline.
+These components are embedded into the binary via `go:embed` at build time
+(see `scripts/prepare-engine.sh`). A fresh clone already contains them, so
+`go build` produces a fully self-contained binary that extracts and runs them
+at startup with no further downloads.
 
 ## Bundled components
 

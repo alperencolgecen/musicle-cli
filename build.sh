@@ -12,10 +12,10 @@ fi
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # prepare_engine builds the embedded Python download engine (venv + spotdl +
-# yt-dlp + static ffmpeg) for the given target OS and regenerates the Go embed
-# glue. It is a no-op (with a warning) when python3 is unavailable, in which
-# case the binary is built without the engine_assets tag and falls back to the
-# legacy pipeline at runtime.
+# yt-dlp + static ffmpeg) for the given target OS and copies it under
+# internal/engine/ so `go:embed` can bake it into the binary. It is a no-op
+# (with a warning) when python3 is unavailable, in which case `go build` will
+# fail because the embedded assets are missing.
 prepare_engine() {
   local os="$1"
   if command -v python3 >/dev/null 2>&1; then
@@ -30,14 +30,9 @@ prepare_engine() {
   fi
 }
 
-# engine_tag returns -tags engine_assets when the prepared venv exists, else "".
-engine_tag() {
-  if [ -d "$ROOT/internal/engine/engine_venv" ]; then
-    echo "-tags engine_assets"
-  else
-    echo ""
-  fi
-}
+# engine_tag artık gerekmez: govulmotor varsayilan olarak go:embed ile binary'ye
+# gomulur. Hazirlik adimi (prepare_engine) varliklari internal/engine altina
+# kopyalar ve build bunlari otomatik gozer.
 
 echo "Select target OS:"
 echo "1) Linux"
@@ -57,7 +52,7 @@ case "$os_choice" in
     mkdir -p build
     echo "==> Building binary..."
     prepare_engine linux
-    CGO_ENABLED=1 $GO build $(engine_tag) -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli .
+    CGO_ENABLED=1 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli .
 
     case "$fmt" in
       1)
@@ -184,7 +179,7 @@ SPEC
     mkdir -p build
     echo "==> Building..."
     prepare_engine windows
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build $(engine_tag) -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli.exe .
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli.exe .
     if [ "$fmt" = "2" ]; then
       mkdir -p build/musicle-cli_Windows_x86_64
       cp build/musicle-cli.exe build/musicle-cli_Windows_x86_64/
@@ -202,7 +197,7 @@ SPEC
     mkdir -p build
     echo "==> Building..."
     prepare_engine darwin
-    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $GO build $(engine_tag) -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli-darwin .
+    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli-darwin .
     if [ "$fmt" = "1" ]; then
       mkdir -p build/musicle-cli_macOS_x86_64
       cp build/musicle-cli-darwin build/musicle-cli_macOS_x86_64/musicle-cli
