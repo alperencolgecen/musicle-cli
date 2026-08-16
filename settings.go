@@ -167,8 +167,10 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	// Long-text tabs (Policies, About) scroll with ↑/↓ even when the right
 	// panel is not focused.
-	if handled, cmd := m.handleScrollKey(msg.String()); handled {
-		return m, cmd
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if handled, cmd := m.handleScrollKey(keyMsg.String()); handled {
+			return m, cmd
+		}
 	}
 	return m, nil
 }
@@ -397,6 +399,8 @@ func (m *SettingsModel) renderRightPanel(width int, height int) string {
 		content = m.renderSoundTab(width)
 	case "tab.policies":
 		content = m.renderScrollableTab(width, height, Tr("tab.policies"), policiesContent())
+	case "tab.extras":
+		content = m.renderScrollableTab(width, height, Tr("tab.extras"), extrasContent())
 	case "tab.about":
 		content = m.renderScrollableTab(width, height, Tr("tab.about"), aboutContent())
 	default:

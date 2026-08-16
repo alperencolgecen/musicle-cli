@@ -37,9 +37,41 @@ Bu yazılım "olduğu gibi" sunulur, garanti verilmez. Yanlış kullanımdan
 kaynaklanan sonuçlardan geliştirici sorumlu tutulamaz.`
 }
 
+// extrasContent returns the keyboard-shortcut reference and quick tips shown
+// in Settings → Extras. It is a single string; the renderer word-wraps and
+// makes it scrollable like the Policies/About tabs.
+func extrasContent() string {
+	return `Musicle Ekstralar
+
+Klavye Kısayolları
+Genel:
+- F1: Bölüm odağını değiştir (veya oynatma çubuğu odağını aç/kapat).
+- F2: Görünüm arasında geçiş yap (Ana Sayfa, İndirme, Profil, Çalma Listesi,
+  Ayarlar).
+- F3: Ayarlar sekmesi arasında geçiş (yalnızca Ayarlar görünümünde).
+- Esc: Ana Sayfa'ya dön.
+- Ctrl+C: Çıkış (İndirme görünümündeyken indirmeyi iptal eder).
+
+Oynatma Çubuğu (F1 ile odaklanın):
+- ↑ / ↓: Ses seviyesini artır / azalt.
+- ← / →: 5 saniye geri / ileri sar.
+- Boşluk: Çal / Duraklat / Devam et.
+
+İpuçları
+- İndirilen parçalar otomatik olarak song_list.txt dosyasına kaydedilir ve
+  Ana Sayfa'daki kitaplığınızda görünür.
+- Ayarlar → Ses sekmesinden çıkış cihazını ve ses limitini seçebilirsiniz.
+- Bir parça bittiğinde otomatik olarak bir sonrakine geçilir.
+- Şarkı sözü ve spektrum görselleştirmesi oynatıcıda gösterilir.
+
+Daha Fazla Bilgi
+- Politikalar ve Hakkında sekmelerinde telif hakkı, gizlilik ve kullanılan
+  3. taraf araçlar hakkında detaylı bilgi bulabilirsiniz.
+- Tüm yapılandırma yalnızca makinenizdeki config.json dosyasında saklanır;
+  hiçbir kişisel veri harici sunucuya gönderilmez.`
+}
+
 // aboutContent returns the project information shown in Settings → About.
-// This base version covers founding/metadata; later edits extend it with
-// purpose, features and third-party credits.
 func aboutContent() string {
 	return `Musicle Hakkında
 

@@ -499,6 +499,82 @@ func (m *DownloadsModel) startPlaylistDownload() tea.Cmd {
 	}
 }
 
+// RefreshTheme updates input styles to match the current theme accent.
+func (m *DownloadsModel) RefreshTheme() {
+	cursorStyle := lipgloss.NewStyle().
+		Background(ui.ColorAccent).
+		Foreground(lipgloss.Color("#000000"))
+	m.musicInput.Cursor.Style = cursorStyle
+	m.musicInput.PromptStyle = ui.AccentStyle
+	m.plURLInput.Cursor.Style = cursorStyle
+	m.plURLInput.PromptStyle = ui.AccentStyle
+}
+
+// detectDownloadProvider inspects a URL's shape and returns the download
+// action the bridge should run. Spotify links/URIs route to the Spotify
+// pipeline; recognised YouTube links route to the YouTube pipeline (yt-dlp).
+// Unrecognised URLs default to Spotify to preserve prior behaviour.
+func detectDownloadProvider(rawURL string) string {
+	u := strings.ToLower(strings.TrimSpace(rawURL))
+	switch {
+	case strings.Contains(u, "spotify.com") || strings.HasPrefix(u, "spotify:"):
+		return "download_spotify"
+	case strings.Contains(u, "youtube.com"), strings.Contains(u, "youtu.be"):
+		return "download_youtube"
+	default:
+		return "download_spotify"
+	}
+}
+
+func (m *DownloadsModel) startDownload() tea.Cmd {
+	if m.isDownloading {
+		m.addLog("error", Tr("dl.error")+": already downloading")
+		return nil
+	}
+	url := strings.TrimSpace(m.musicInput.Value())
+	if url == "" {
+		m.addLog("error", Tr("dl.enter_url"))
+		return nil
+	}
+	if !strings.HasPrefix(url, "http") {
+		m.addLog("error", Tr("dl.invalid_url"))
+		return nil
+	}
+
+	// Determine output directory
+	outDir := ""
+	if state.Current.CurrentProfile != nil && m.playlistIdx >= 0 && m.playlistIdx < len(state.Current.CurrentProfile.Playlists) {
+		pl := state.Current.CurrentProfile.Playlists[m.playlistIdx]
+		outDir = state.Current.PlaylistDir(state.Current.CurrentProfile.FolderName, pl.FolderName)
+	} else if state.Current.CurrentProfile != nil && len(state.Current.CurrentProfile.Playlists) > 0 {
+		pl := state.Current.CurrentProfile.Playlists[0]
+		outDir = state.Current.PlaylistDir(state.Current.CurrentProfile.FolderName, pl.FolderName)
+	}
+	if outDir == "" {
+		var err error
+		outDir, err = os.Getwd()
+		if err != nil {
+			outDir = "."
+		}
+		m.addLog("info", "No playlist selected, using current directory")
+	}
+
+	action := detectDownloadProvider(url)
+
+	m.isDownloading = true
+	m.downloadStart = time.Now()
+	m.downloadPercent = 0
+	m.downloadStatus = "0%"
+	m.progressLine = ""
+	m.resultLine = ""
+	m.downloadedTracks = 0
+	m.failedTracks = 0
+	m.lastLoggedPct = -1
+	return func() tea.Msg {
+		return StartDownloadMsg{Action: action, URL: url, Output: outDir}
+	}
+}
+
 func (m *DownloadsModel) handleDownloadResult(msg DownloadResultMsg) {
 	m.isDownloading = false
 	m.downloadPercent = 100
