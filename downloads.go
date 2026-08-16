@@ -60,7 +60,9 @@ type DownloadsModel struct {
 	downloadHistory  []downloadHistoryItem
 	downloadPercent  float64
 	downloadStatus   string
-	lastLoggedPct    int // dedup progress logs
+	progressLine     string // "İndiriliyor... X%" shown during download
+	resultLine       string // completion message shown under progress
+	lastLoggedPct    int    // dedup progress logs (legacy)
 
 	playlistOptions []string
 }
@@ -104,7 +106,6 @@ func (m *DownloadsModel) Init() tea.Cmd {
 	m.sectionIdx = dlSectionMusic
 	m.focusIdx = 0
 	m.musicInput.Focus()
-	m.addLog("info", "Downloads ready — type a URL and press Enter")
 	return nil
 }
 
@@ -446,45 +447,17 @@ func (m *DownloadsModel) currentInput() *textinput.Model {
 	return nil
 }
 
-// TrackProgress logs download progress to console. To avoid flooding the
-// console with per-percent lines, only the start (active, 0%), completion
-// (!active, >=100%) and error/status-marker transitions are logged.
+// TrackProgress updates the on-screen status line (e.g. "İndiriliyor... 45%").
+// It intentionally does NOT write to the console log, so the console stays
+// quiet during normal downloads — only the status block shows progress.
 func (m *DownloadsModel) TrackProgress(active bool, pct float64, status string) {
-	if status == "" {
+	m.downloadPercent = pct
+	if !active {
+		// Final transition is handled by handleDownloadResult, which knows
+		// the track title / song count for a proper completion message.
 		return
 	}
-	intPct := int(pct)
-	isBad := active &&
-		(strings.Contains(strings.ToLower(status), "error") ||
-			strings.Contains(strings.ToLower(status), "fail"))
-	finished := !active || intPct >= 100
-
-	// Log the first message once (0 + active) and the final line once.
-	if finished {
-		level := "ok"
-		if strings.Contains(strings.ToLower(status), "error") || strings.Contains(strings.ToLower(status), "fail") {
-			level = "error"
-		} else if status == "Done" || status == "Saved" || strings.HasPrefix(status, "Motor") {
-			level = "ok"
-		}
-		m.lastLoggedPct = -1
-		msg := strings.Trim(strings.TrimPrefix(status, "Motor ile "), " ")
-		if msg == "" {
-			msg = "Download complete"
-		}
-		m.addLog(level, msg)
-		return
-	}
-	if intPct == 0 && m.lastLoggedPct != 0 {
-		m.lastLoggedPct = 0
-		m.addLog("info", "İndiriliyor...")
-		return
-	}
-	if isBad && intPct != m.lastLoggedPct {
-		m.lastLoggedPct = intPct
-		m.addLog("error", fmt.Sprintf("[%d%%] %s", intPct, status))
-		return
-	}
+	m.progressLine = fmt.Sprintf("İndiriliyor... %d%%", int(pct))
 }
 
 // startPlaylistDownload starts downloading a playlist URL.
@@ -513,9 +486,10 @@ func (m *DownloadsModel) startPlaylistDownload() tea.Cmd {
 	m.downloadStart = time.Now()
 	m.downloadPercent = 0
 	m.downloadStatus = "0%"
+	m.progressLine = ""
+	m.resultLine = ""
 	m.downloadedTracks = 0
 	m.failedTracks = 0
-	m.addLog("info", "İndiriliyor...")
 
 	// Detect if it's a Spotify or YouTube playlist URL
 	action := detectDownloadProvider(url)
@@ -525,114 +499,51 @@ func (m *DownloadsModel) startPlaylistDownload() tea.Cmd {
 	}
 }
 
-// RefreshTheme updates input styles to match the current theme accent.
-func (m *DownloadsModel) RefreshTheme() {
-	cursorStyle := lipgloss.NewStyle().
-		Background(ui.ColorAccent).
-		Foreground(lipgloss.Color("#000000"))
-	m.musicInput.Cursor.Style = cursorStyle
-	m.musicInput.PromptStyle = ui.AccentStyle
-	m.plURLInput.Cursor.Style = cursorStyle
-	m.plURLInput.PromptStyle = ui.AccentStyle
-}
-
-// detectDownloadProvider inspects a URL's shape and returns the download
-// action the bridge should run. Spotify links/URIs route to the Spotify
-// pipeline (API-free resolution); recognised YouTube links (watch, short,
-// music, playlist) route to the YouTube pipeline (yt-dlp). Unrecognised URLs
-// default to Spotify to preserve prior behaviour. The choice is logged so the
-// user can see which provider the unified engine dispatcher will target.
-func detectDownloadProvider(rawURL string) string {
-	u := strings.ToLower(strings.TrimSpace(rawURL))
-	switch {
-	case strings.Contains(u, "spotify.com") || strings.HasPrefix(u, "spotify:"):
-		return "download_spotify"
-	case strings.Contains(u, "youtube.com"), strings.Contains(u, "youtu.be"):
-		return "download_youtube"
-	default:
-		return "download_spotify"
-	}
-}
-
-func (m *DownloadsModel) startDownload() tea.Cmd {
-	if m.isDownloading {
-		m.addLog("error", Tr("dl.error")+": already downloading")
-		return nil
-	}
-	url := strings.TrimSpace(m.musicInput.Value())
-	if url == "" {
-		m.addLog("error", Tr("dl.enter_url"))
-		return nil
-	}
-	if !strings.HasPrefix(url, "http") {
-		m.addLog("error", Tr("dl.invalid_url"))
-		return nil
-	}
-
-	// Determine output directory
-	outDir := ""
-	if state.Current.CurrentProfile != nil && m.playlistIdx >= 0 && m.playlistIdx < len(state.Current.CurrentProfile.Playlists) {
-		pl := state.Current.CurrentProfile.Playlists[m.playlistIdx]
-		outDir = state.Current.PlaylistDir(state.Current.CurrentProfile.FolderName, pl.FolderName)
-	} else if state.Current.CurrentProfile != nil && len(state.Current.CurrentProfile.Playlists) > 0 {
-		pl := state.Current.CurrentProfile.Playlists[0]
-		outDir = state.Current.PlaylistDir(state.Current.CurrentProfile.FolderName, pl.FolderName)
-	}
-	if outDir == "" {
-		var err error
-		outDir, err = os.Getwd()
-		if err != nil {
-			outDir = "."
-		}
-		m.addLog("info", "No playlist selected, using current directory")
-	}
-
-	action := detectDownloadProvider(url)
-
-	m.isDownloading = true
-	m.downloadStart = time.Now()
-	m.downloadPercent = 0
-	m.downloadStatus = "0%"
-	m.downloadedTracks = 0
-	m.failedTracks = 0
-	m.lastLoggedPct = -1
-	m.addLog("info", "İndiriliyor...")
-	return func() tea.Msg {
-		return StartDownloadMsg{Action: action, URL: url, Output: outDir}
-	}
-}
-
 func (m *DownloadsModel) handleDownloadResult(msg DownloadResultMsg) {
 	m.isDownloading = false
-	elapsed := time.Since(m.downloadStart).Truncate(time.Second)
+	m.downloadPercent = 100
+	m.progressLine = "İndiriliyor... 100%"
 
 	if msg.Error != nil {
 		m.failedTracks++
 		m.downloadHistory = append(m.downloadHistory, downloadHistoryItem{title: "error", status: "error", time: time.Now()})
-		m.addLog("error", fmt.Sprintf("%v (%ds)", msg.Error, elapsed))
+		m.progressLine = ""
+		m.resultLine = fmt.Sprintf("Hata: %v", msg.Error)
+		m.addLog("error", m.resultLine)
 		return
 	}
 	if msg.Result == nil {
 		m.failedTracks++
 		m.downloadHistory = append(m.downloadHistory, downloadHistoryItem{title: "error", status: "error", time: time.Now()})
-		m.addLog("error", "Result is nil (no response from bridge)")
+		m.progressLine = ""
+		m.resultLine = "Hata: sonuç yok (bridge'den yanıt yok)"
+		m.addLog("error", m.resultLine)
 		return
 	}
 
 	if msg.Result.Status == "error" {
 		m.failedTracks++
 		m.downloadHistory = append(m.downloadHistory, downloadHistoryItem{title: msg.Result.Error, status: "error", time: time.Now()})
-		m.addLog("error", msg.Result.Error)
+		m.progressLine = ""
+		m.resultLine = "Hata: " + msg.Result.Error
+		m.addLog("error", m.resultLine)
 		return
 	}
 
-	msgText := msg.Result.Message
-	if msgText == "" {
-		msgText = "Download complete"
-	}
 	m.downloadedTracks++
-	m.downloadHistory = append(m.downloadHistory, downloadHistoryItem{title: msgText, status: "ok", time: time.Now()})
-	m.addLog("ok", fmt.Sprintf("%s (%ds)", msgText, elapsed))
+	m.downloadHistory = append(m.downloadHistory, downloadHistoryItem{title: msg.Result.Title, status: "ok", time: time.Now()})
+
+	// Completion message shown under the progress line.
+	if msg.Result.Songs != nil && len(msg.Result.Songs) > 0 {
+		m.resultLine = fmt.Sprintf("%d şarkı indirildi", len(msg.Result.Songs))
+	} else {
+		title := msg.Result.Title
+		if title == "" {
+			title = msg.Result.Filename
+		}
+		m.resultLine = fmt.Sprintf("%s adlı şarkı indirildi", title)
+	}
+	// No console log on success — the status block above carries the result.
 }
 
 func (m *DownloadsModel) HandleCtrlC() {
@@ -804,6 +715,21 @@ func (m *DownloadsModel) consoleWidth() int {
 func (m *DownloadsModel) renderConsole(bodyH int) string {
 	w := m.consoleWidth()
 	title := ui.SectionTitleStyle.Render(langT("CONSOLE", "KONSOL"))
+
+	// Status block (progress + result) shown at the top of the console,
+	// above any error logs. Keeps the console clean during downloads.
+	var statusParts []string
+	if m.progressLine != "" {
+		statusParts = append(statusParts, ui.WhiteStyle.Render(m.progressLine))
+	}
+	if m.resultLine != "" {
+		if strings.HasPrefix(m.resultLine, "Hata:") {
+			statusParts = append(statusParts, logErrStyle.Render(m.resultLine))
+		} else {
+			statusParts = append(statusParts, logOKStyle.Render(m.resultLine))
+		}
+	}
+	statusBlock := strings.Join(statusParts, "\n")
 	visible := bodyH - 4
 	if visible < 8 {
 		visible = 8
@@ -849,7 +775,11 @@ func (m *DownloadsModel) renderConsole(bodyH int) string {
 
 	var inner string
 	if totalLines == 0 {
-		inner = title + "\n" + ui.FaintStyle.Render("  No logs")
+		if statusBlock != "" {
+			inner = title + "\n" + statusBlock
+		} else {
+			inner = title + "\n" + ui.FaintStyle.Render("  No logs")
+		}
 	} else {
 		var contentParts []string
 		for i := start; i < end; i++ {
@@ -1001,7 +931,11 @@ func (m *DownloadsModel) renderConsole(bodyH int) string {
 			contentStr = lipgloss.JoinHorizontal(lipgloss.Top, contentStr, " ", scrollStr)
 		}
 
-		inner = title + "\n" + contentStr
+		if statusBlock != "" {
+			inner = title + "\n" + statusBlock + "\n" + contentStr
+		} else {
+			inner = title + "\n" + contentStr
+		}
 	}
 
 	// just fill remaining space and render border
