@@ -2,21 +2,22 @@
 
 `musicle-cli` (MusicLeCLI) bundles a self-contained download engine built from
 the following third-party projects. They are extracted at runtime into the
-user cache directory and invoked via an embedded Python interpreter.
+user cache directory and invoked directly (no Python).
 
 These components are embedded into the binary via `go:embed` at build time
-(see `scripts/prepare-engine.sh`). A fresh clone already contains them, so
-`go build` produces a fully self-contained binary that extracts and runs them
-at startup with no further downloads.
+(see `scripts/prepare-engine.sh`). A build run with `-tags engine_assets`
+produces a fully self-contained binary that extracts and runs them at startup
+with no further downloads.
 
 ## Bundled components
 
 | Component | Version | License | Source |
 |-----------|---------|---------|--------|
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 2024.12.13 | The Unlicense | https://github.com/yt-dlp/yt-dlp |
-| [spotDL](https://github.com/spotDL/spotify-downloader) (spotdl) | 4.4.0 | MIT | https://github.com/spotDL/spotify-downloader |
-| [FFmpeg](https://ffmpeg.org/) (static build) | 6.1.1 | LGPL-2.1+ (with GPL components) | https://ffmpeg.org/ |
-| CPython (venv interpreter) | 3.11 | PSF License | https://www.python.org/ |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | 2026.07.04 | The Unlicense | https://github.com/yt-dlp/yt-dlp |
+| [FFmpeg](https://ffmpeg.org/) (static build) | 7.0.2 | LGPL-2.1+ (with GPL components) | https://ffmpeg.org/ |
+
+The versions above are the latest fetched by `scripts/prepare-engine.sh`; see
+`assets/engine/manifest.yaml` for the pinned values.
 
 ## License summaries
 
@@ -24,37 +25,11 @@ at startup with no further downloads.
 yt-dlp is released into the public domain. The full text of the Unlicense is
 available at <https://unlicense.org/>.
 
-### spotDL — MIT License
-Copyright (c) 2021 spotDL Developers.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
 ### FFmpeg — LGPL-2.1+
 FFmpeg is distributed under the GNU Lesser General Public License version 2.1
 or later. When compiled with the optional GPL components, the resulting binary
 is covered by the GNU General Public License version 2 or later. The full
 license texts are available at <https://www.ffmpeg.org/legal.html>.
-
-### CPython — PSF License Agreement
-The embedded Python interpreter is distributed under the Python Software
-Foundation License Agreement. The full text is available at
-<https://www.python.org/psf/license/>.
 
 ## Disclaimer
 

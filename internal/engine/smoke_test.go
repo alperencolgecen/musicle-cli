@@ -13,8 +13,8 @@ import (
 // <Root>/engine_bin.
 func TestSmokeExtractTools(t *testing.T) {
 	fake := fstest.MapFS{
-		"engine_bin/yt-dlp":       &fstest.MapFile{Data: []byte("#!/bin/sh"), Mode: 0o755},
-		"engine_bin/ffmpeg":       &fstest.MapFile{Data: []byte("# ffmpeg"), Mode: 0o755},
+		"engine_bin/yt-dlp":        &fstest.MapFile{Data: []byte("#!/bin/sh"), Mode: 0o755},
+		"engine_bin/ffmpeg":        &fstest.MapFile{Data: []byte("# ffmpeg"), Mode: 0o755},
 		"engine_bin/.engine-stamp": &fstest.MapFile{Data: []byte("engine-v2\n")},
 	}
 

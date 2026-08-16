@@ -26,7 +26,7 @@
 - **🌐 Bilingual** — Full English and Turkish interface support
 - **🎨 Themes** — Light, Dark, and custom color themes
 - **⚡ Blazing Fast** — Written in Go, launches in milliseconds
-- **🔊 Audio Engine** — Powered by Python (mutagen + ffmpeg), auto-advances on completion
+- **🔊 Audio Engine** — Embedded yt-dlp + FFmpeg downloads MP3 320k with album art, auto-advances on completion
 - **🔄 Auto-Advance** — Automatic next track with configurable delay
 - **🔍 Search** — Quick filtering across your library
 - **🎛️ Equalizer-like Bars** — Real-time audio spectrum visualization in the player bar
@@ -129,21 +129,21 @@ musicle-cli
 
 ### Build from Source
 
-The Python download engine (CPython venv + **spotDL**, **yt-dlp** and a static
-**FFmpeg**) is embedded into the binary via `go:embed` (`-tags engine_assets`),
-so the released binary is fully self-contained — end users never download
-anything extra. The engine assets themselves are **not** committed to the repo;
-they are generated at build time by `scripts/prepare-engine.sh` (needs `python3`).
+The download engine (standalone **yt-dlp** + a static **FFmpeg**) is embedded
+into the binary via `go:embed` (`-tags engine_assets`), so the released binary
+is fully self-contained — end users never download anything extra and **no
+Python is required**. The engine assets themselves are **not** committed to the
+repo; they are fetched at build time by `scripts/prepare-engine.sh`.
 
 ```bash
 git clone https://github.com/alperencolgecen/musicle-cli.git
 cd musicle-cli
 
-# Recommended: builds the embedded engine, then bakes it into the binary
+# Recommended: downloads the embedded engine, then bakes it into the binary
 make build
 
 # …or manually:
-make engine                 # prepares internal/engine/engine_venv + engine_ffmpeg
+make engine                 # downloads yt-dlp + ffmpeg into internal/engine/engine_bin
 CGO_ENABLED=1 go build -tags engine_assets -o musicle-cli .
 ```
 
@@ -151,8 +151,10 @@ CGO_ENABLED=1 go build -tags engine_assets -o musicle-cli .
 > build is `CGO_ENABLED=1` by default. On Fedora: `sudo dnf install gcc alsa-lib-devel`.
 > A plain `go build` (without `-tags engine_assets`) still compiles, but the
 > embedded engine is omitted and the downloader falls back to the legacy method
-> at runtime. To rebuild the engine from scratch (e.g. after bumping versions in
-> `assets/engine/manifest.yaml`), run `make engine` again before building.
+> at runtime. `scripts/prepare-engine.sh` compresses FFmpeg with UPX when
+> available (77 MB → ~25 MB) to keep the final binary small. To re-fetch the
+> engine (e.g. after bumping versions in `assets/engine/manifest.yaml`), run
+> `make engine` again before building.
 
 ---
 
@@ -252,8 +254,6 @@ musicle-cli/
 ├── model.go                # Main TUI model
 ├── home.go                 # Home screen logic (player, songs, sidebar)
 ├── settings.go             # Settings screen
-├── bridge/
-│   └── bridge.go           # Go ↔ Python bridge (daemon communication)
 ├── state/
 │   ├── state.go            # Global application state
 │   ├── config.go           # Configuration management
@@ -267,7 +267,12 @@ musicle-cli/
 │   ├── player.go           # Audio playback engine (oto + beep + gonum FFT)
 │   ├── metadata.go         # Metadata extraction (dhowden/tag)
 │   ├── playlist.go         # Playlist CRUD + local file import
-│   ├── download.go         # YouTube/Spotify download via yt-dlp/spotdl
+│   ├── download.go         # YouTube/Spotify download via embedded engine dispatcher
+├── internal/engine/        # Embedded download engine (go:embed yt-dlp + ffmpeg)
+│   ├── ytwrap.go           # yt-dlp/ffmpeg orchestration -> MP3 320k + APIC cover
+│   ├── spotify.go          # API-free Spotify resolution (embed scrape -> ytsearch1)
+│   ├── extract.go          # Extract embedded tools to the user cache
+│   └── engine_bin/         # (not committed) prepared by scripts/prepare-engine.sh
 ├── maximize_windows.go     # Terminal maximize (Windows)
 ├── maximize_unix.go        # Terminal maximize (Linux/macOS)
 ├── .goreleaser.yaml        # Release build config
@@ -304,11 +309,12 @@ musicle-cli/
 ## 📄 Changelog
 
 ### v1.1.0
-- ✨ **Pure Go rewrite** — no Python, no engine directory, single binary
-- 📦 **Self-contained** — download, extract, run. Zero dependencies
+- ✨ **Pure Go rewrite** — no Python, no venv, single self-contained binary
+- 🔽 **Embedded download engine** — standalone yt-dlp + static FFmpeg baked in
+  via `go:embed`; YouTube & Spotify (API-free) → MP3 320k with embedded cover
+- 📦 **Self-contained** — download, extract, run. Zero runtime dependencies
 - 🔊 **Audio engine** — oto + beep for playback, gonum FFT for spectrum
 - 🏷️ **Native metadata** — dhowden/tag for ID3/FLAC/MP4/AAC
-- 🚫 **CGO-free** — pure Go on all platforms (file dialogs via zenity)
 - 🐧 **Linux arm64 + 386** — added alongside x86_64
 - 📊 16-band real-time FFT spectrum visualization
 - 🎨 Album art ANSI rendering
@@ -346,12 +352,10 @@ Contributions are welcome! Please see our [contributing guidelines](CONTRIBUTING
 This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
 
 The binary also bundles third-party components that are extracted at runtime into
-the user cache directory and invoked via the embedded Python interpreter:
+the user cache directory and invoked directly (no Python):
 
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — The Unlicense
-- **[spotDL](https://github.com/spotDL/spotify-downloader)** — MIT License
 - **[FFmpeg](https://ffmpeg.org/)** — LGPL-2.1+ (with GPL components)
-- **CPython** (embedded interpreter) — PSF License
 
 Full license texts and disclaimers are in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

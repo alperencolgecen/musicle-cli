@@ -22,25 +22,25 @@ import (
 )
 
 var (
-	youtubeRL    *rateLimiter
-	spotifyRL    *rateLimiter
-	rlOnce       sync.Once
+	youtubeRL *rateLimiter
+	spotifyRL *rateLimiter
+	rlOnce    sync.Once
 
 	ytdlpPath string
 	ytdlpOnce sync.Once
 )
 
 func initRateLimiters() {
-	youtubeRL = newRateLimiter(8, 4)   // 8 req/s, burst 4
+	youtubeRL = newRateLimiter(8, 4)  // 8 req/s, burst 4
 	spotifyRL = newRateLimiter(15, 8) // 15 req/s, burst 8
 }
 
 type rateLimiter struct {
-	mu       sync.Mutex
-	tokens   float64
-	burst    int
-	rate     float64 // tokens per nanosecond
-	last     time.Time
+	mu     sync.Mutex
+	tokens float64
+	burst  int
+	rate   float64 // tokens per nanosecond
+	last   time.Time
 }
 
 func newRateLimiter(ratePerSec, burst int) *rateLimiter {
@@ -230,12 +230,12 @@ func DownloadStream(streamURL string, contentLen int64, cb download.ProgressCall
 			lastErr = fmt.Errorf("create request: %w", err)
 			continue
 		}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Referer", "https://www.youtube.com/")
-	req.Header.Set("Origin", "https://www.youtube.com")
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Accept", "*/*")
+		req.Header.Set("Referer", "https://www.youtube.com/")
+		req.Header.Set("Origin", "https://www.youtube.com")
 
-	resp, err := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("http get (attempt %d): %w", attempt+1, err)
 			continue
@@ -720,10 +720,12 @@ func searchYouTubeAPI(query string, limit int, videoDuration string) ([]YouTubeS
 				VideoID string `json:"videoId"`
 			} `json:"id"`
 			Snippet struct {
-				Title       string `json:"title"`
+				Title        string `json:"title"`
 				ChannelTitle string `json:"channelTitle"`
-				Thumbnails struct {
-					Default struct { URL string `json:"url"` } `json:"default"`
+				Thumbnails   struct {
+					Default struct {
+						URL string `json:"url"`
+					} `json:"default"`
 				} `json:"thumbnails"`
 			} `json:"snippet"`
 		} `json:"items"`
@@ -987,9 +989,9 @@ func ReTagMP3(filePath, playlistName string, trackNum int) error {
 	}
 	// Build minimal TrackInfo with playlist + track number
 	ti := &download.TrackInfo{
-		Playlist:  playlistName,
-		TrackNum:  trackNum,
-		Title:     "", // preserve existing — we don't parse the old tag here
+		Playlist: playlistName,
+		TrackNum: trackNum,
+		Title:    "", // preserve existing — we don't parse the old tag here
 	}
 	// For simplicity, re-tag by reading format info from file path
 	// Actually we need to parse the title from existing ID3 — skip for now
@@ -1092,4 +1094,3 @@ func sanitizeFilename(name string) string {
 	}, name)
 	return strings.TrimSpace(name)
 }
-

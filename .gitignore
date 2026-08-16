@@ -82,7 +82,8 @@ venv/
 # clone must run `make build` / `prepare-engine.sh` first, so the engine bin
 # dir stays out of git.
 internal/engine/engine_bin/
-# prepare working dir (intermediate used to build the embedded copy)
+# Obsolete engine working dirs (old Python venv / static ffmpeg layout). Kept
+# ignored so any stale prepare output can never be committed.
 assets/engine/venv/
 assets/engine/ffmpeg/
 

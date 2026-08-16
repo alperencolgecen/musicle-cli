@@ -62,17 +62,37 @@ func downloadOne(ext *Extracted, url, outDir string, progress Progress) error {
 	audioTpl := filepath.Join(tmp, "audio.%(ext)s")
 	thumbBase := filepath.Join(tmp, "audio")
 
-	// 2) download bestaudio + thumbnail.
+	// 2) download bestaudio + thumbnail. YouTube occasionally serves a
+	// transient 403 on the media, so we retry a few times; if the audio file
+	// shows up despite a non-zero exit (e.g. only the thumbnail step failed)
+	// we accept it.
 	dlArgs := []string{
 		"-f", "bestaudio",
 		"-o", audioTpl,
 		"--write-thumbnail",
 		"--no-playlist",
 		"--no-warnings",
+		"--retries", "3",
+		"--fragment-retries", "3",
 		"--", url,
 	}
-	if err := runYTDLP(ext.YTDLP, dlArgs, progress); err != nil {
-		return fmt.Errorf("yt-dlp indirme: %w", err)
+	var dlErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		dlErr = runYTDLP(ext.YTDLP, dlArgs, progress)
+		if dlErr == nil {
+			break
+		}
+		if _, err := findAudioFile(tmp, "audio"); err == nil {
+			dlErr = nil
+			break
+		}
+		if attempt < 3 {
+			progress(0, fmt.Sprintf("Yeniden deneniyor (%d/3)...", attempt+1))
+			time.Sleep(2 * time.Second)
+		}
+	}
+	if dlErr != nil {
+		return fmt.Errorf("yt-dlp indirme: %w", dlErr)
 	}
 
 	audioFile, err := findAudioFile(tmp, "audio")
@@ -161,9 +181,9 @@ func runFFMPEG(bin string, args []string, progress Progress) error {
 }
 
 var (
-	dlPctRE  = regexp.MustCompile(`\[download\]\s+([0-9]+(?:\.[0-9]+)?)%`)
-	durRE    = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)`)
-	timeRE   = regexp.MustCompile(`time=(\d+):(\d+):(\d+)`)
+	dlPctRE = regexp.MustCompile(`\[download\]\s+([0-9]+(?:\.[0-9]+)?)%`)
+	durRE   = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)`)
+	timeRE  = regexp.MustCompile(`time=(\d+):(\d+):(\d+)`)
 )
 
 func scanYTDLPProgress(r io.Reader, progress Progress) {

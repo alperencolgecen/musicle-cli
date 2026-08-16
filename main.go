@@ -25,7 +25,7 @@ var commit = ""
 var date = ""
 
 const bannerText = `MusicLeCLI — terminal music player
-Embedded download engine: yt-dlp, spotDL, FFmpeg (see THIRD_PARTY_NOTICES.md)
+Embedded download engine: yt-dlp + FFmpeg (MP3 320k + album art, see THIRD_PARTY_NOTICES.md)
 `
 
 const helpText = `MusicLeCLI — terminal music player with download engine
