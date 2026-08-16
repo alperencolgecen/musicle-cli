@@ -20,7 +20,8 @@ func engineDisabled() bool {
 }
 
 // isSpotifyURL heuristically detects Spotify links/URIs so the unified
-// engine dispatcher can route to spotdl instead of yt-dlp.
+// engine dispatcher can route them through yt-dlp (which resolves Spotify
+// pages directly), kept separate from plain YouTube URLs.
 func isSpotifyURL(url string) bool {
 	u := strings.ToLower(strings.TrimSpace(url))
 	return strings.Contains(u, "spotify.com") || strings.HasPrefix(u, "spotify:")
@@ -62,7 +63,7 @@ func downloadYouTube(url, outputDir string) *Result {
 	return meta
 }
 
-// runEngine is the unified yt-dlp / spotdl dispatcher and the head of the
+// runEngine is the unified yt-dlp dispatcher and the head of the
 // error fallback chain. It tries the embedded engine first, routing by URL
 // type, and verifies a real audio file was produced before declaring
 // success. When the engine is unavailable, returns an error, or writes
@@ -81,7 +82,7 @@ func runEngine(url, outputDir string) (*Result, bool) {
 	prior := listAudioFiles(outputDir)
 
 	if isSpotifyURL(url) {
-		CurrentDownload.Set(true, 0, "Bridge: spotdl motoru başlatılıyor...")
+		CurrentDownload.Set(true, 0, "Bridge: Spotify motoru başlatılıyor (yt-dlp)...")
 		err := engine.DownloadSpotify(engine.SpotifyOptions{
 			OutputDir: outputDir,
 			URLs:      []string{url},

@@ -10,24 +10,17 @@ import (
 	"sync"
 )
 
-// Extracted holds the on-disk paths to a fully extracted engine. It is the
-// value returned by Extract() and is what the wrappers operate on.
+// Extracted holds the on-disk paths to the fully extracted engine tools. It is
+// the value returned by Extract() and is what the wrappers operate on.
 type Extracted struct {
-	Root         string // cache root, e.g. ~/.cache/musicle/engine-v1
-	PythonBin    string // absolute path to the embedded python interpreter
-	SpotdlBin    string // absolute path to the spotdl console script wrapper
-	YtdlpBin     string // absolute path to the yt-dlp console script wrapper
-	FFmpegBin    string // absolute path to the ffmpeg binary
-	FFprobeBin   string // absolute path to the ffprobe binary
-	SitePackages string // PYTHONPATH entry: venv/lib/python*/site-packages
+	Root     string // cache root, e.g. ~/.cache/musicle/engine-v2
+	YTDLP    string // absolute path to the embedded yt-dlp binary
+	FFMPEG   string // absolute path to the embedded ffmpeg binary
+	FFPROBE  string // absolute path to the embedded ffprobe binary
 }
 
-// ErrNoEmbeddedAssets is defined in embed_assets.go (always compiled) so the
-// same identifier is available to all callers. It is returned by Extract() when
-// the embedded engine assets are missing or corrupt.
-
 // cacheVersion must match the value written by scripts/prepare-engine.sh.
-const cacheVersion = "engine-v1"
+const cacheVersion = "engine-v2"
 
 // sentinelName marks a successful extract; its presence short-circuits Extract.
 const sentinelName = ".extracted"
@@ -38,11 +31,10 @@ var (
 	extractErr  error
 )
 
-// Extract returns the on-disk locations of the embedded engine, extracting
-// the embedded venv + ffmpeg to UserCacheDir on first call. Subsequent calls
-// return the cached result.
+// Extract returns the on-disk locations of the embedded tools, extracting them
+// to UserCacheDir on first call. Subsequent calls return the cached result.
 //
-// If the embedded engine assets are absent or corrupt, Extract returns
+// If the embedded tools are absent or corrupt, Extract returns
 // ErrNoEmbeddedAssets.
 func Extract() (*Extracted, error) {
 	extractOnce.Do(func() {
@@ -88,28 +80,16 @@ func doExtract() (*Extracted, error) {
 		return nil, fmt.Errorf("engine: cache dizini oluşturulamadı: %w", err)
 	}
 
-	venvDst := filepath.Join(root, "venv")
-	ffmpegDst := filepath.Join(root, "ffmpeg")
-	scriptsDst := filepath.Join(root, "scripts")
-
-	if err := copyFS(venvFS, "engine_venv", venvDst); err != nil {
-		return nil, fmt.Errorf("engine: venv çıkarılamadı: %w", err)
-	}
-	if err := copyFS(ffmpegFS, "engine_ffmpeg", ffmpegDst); err != nil {
-		return nil, fmt.Errorf("engine: ffmpeg çıkarılamadı: %w", err)
-	}
-	// Helper scripts must be on disk so the embedded python can import them.
-	if err := copyFS(scriptsFS, "scripts", scriptsDst); err != nil {
-		return nil, fmt.Errorf("engine: scriptler çıkarılamadı: %w", err)
+	binDst := filepath.Join(root, "engine_bin")
+	if err := copyFS(binFS, "engine_bin", binDst); err != nil {
+		return nil, fmt.Errorf("engine: araçlar çıkarılamadı: %w", err)
 	}
 
-	// chmod +x on ffmpeg binaries on unix.
+	// chmod +x on the tool binaries on unix.
 	if runtime.GOOS != "windows" {
-		_ = os.Chmod(filepath.Join(ffmpegDst, "ffmpeg"), 0o755)
-		_ = os.Chmod(filepath.Join(ffmpegDst, "ffprobe"), 0o755)
-		_ = os.Chmod(filepath.Join(venvDst, "bin", "python"), 0o755)
-		_ = os.Chmod(filepath.Join(venvDst, "bin", "spotdl"), 0o755)
-		_ = os.Chmod(filepath.Join(venvDst, "bin", "yt-dlp"), 0o755)
+		for _, name := range []string{"yt-dlp", "ffmpeg", "ffprobe"} {
+			_ = os.Chmod(filepath.Join(binDst, name+exeSuffix()), 0o755)
+		}
 	}
 
 	// Stamp the cache as valid.
@@ -140,54 +120,23 @@ func isExtracted(root string) (bool, error) {
 }
 
 func buildExtracted(root string) (*Extracted, error) {
-	venv := filepath.Join(root, "venv")
-	ffmpeg := filepath.Join(root, "ffmpeg")
+	bin := filepath.Join(root, "engine_bin")
+	ytdlp := filepath.Join(bin, "yt-dlp"+exeSuffix())
+	ffmpeg := filepath.Join(bin, "ffmpeg"+exeSuffix())
+	ffprobe := filepath.Join(bin, "ffprobe"+exeSuffix())
 
-	py := venvPython(venv)
-	spotdl := venvBin(venv, "spotdl")
-	ytdlp := venvBin(venv, "yt-dlp")
-
-	for _, p := range []string{py, spotdl, ytdlp} {
+	for _, p := range []string{ytdlp, ffmpeg, ffprobe} {
 		if _, err := os.Stat(p); err != nil {
 			return nil, fmt.Errorf("engine: beklenen binary eksik: %s (%w)", p, err)
 		}
 	}
 
 	return &Extracted{
-		Root:         root,
-		PythonBin:    py,
-		SpotdlBin:    spotdl,
-		YtdlpBin:     ytdlp,
-		FFmpegBin:    filepath.Join(ffmpeg, "ffmpeg"+exeSuffix()),
-		FFprobeBin:   filepath.Join(ffmpeg, "ffprobe"+exeSuffix()),
-		SitePackages: venvSitePackages(venv),
+		Root:    root,
+		YTDLP:   ytdlp,
+		FFMPEG:  ffmpeg,
+		FFPROBE: ffprobe,
 	}, nil
-}
-
-func venvPython(venv string) string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(venv, "Scripts", "python.exe")
-	}
-	return filepath.Join(venv, "bin", "python")
-}
-
-func venvBin(venv, name string) string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(venv, "Scripts", name+".exe")
-	}
-	return filepath.Join(venv, "bin", name)
-}
-
-func venvSitePackages(venv string) string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(venv, "Lib", "site-packages")
-	}
-	// unix: lib/pythonX.Y/site-packages — pick whichever exists.
-	candidates, _ := filepath.Glob(filepath.Join(venv, "lib", "python*", "site-packages"))
-	if len(candidates) > 0 {
-		return candidates[0]
-	}
-	return filepath.Join(venv, "lib", "site-packages")
 }
 
 func exeSuffix() string {
@@ -205,7 +154,6 @@ func copyFS(files fs.FS, srcRoot, dst string) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		// Skip the synthetic root.
 		if path == srcRoot {
 			return nil
 		}
@@ -222,7 +170,6 @@ func copyFS(files fs.FS, srcRoot, dst string) error {
 			return os.MkdirAll(target, 0o755)
 		}
 
-		// Regular file (or symlink): copy bytes.
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}

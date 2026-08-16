@@ -1,182 +1,93 @@
 #!/usr/bin/env bash
-# prepare-engine.sh — build the embedded Python download engine for musicle-cli.
+# prepare-engine.sh — fetch the self-contained download engine for musicle-cli.
 #
-# Creates a Python venv at assets/engine/venv with spotdl + yt-dlp installed,
-# downloads a static ffmpeg into assets/engine/ffmpeg/<os>-<arch>/, and
-# writes a sentinel so `go build` can embed everything via go:embed.
+# Downloads a standalone yt-dlp binary plus static ffmpeg/ffprobe into
+# internal/engine/engine_bin/ (no Python, no venv). `go:embed` (see
+# internal/engine/embed_assets.go) then bakes them into the binary when built
+# with -tags engine_assets.
 #
 # Usage:
 #   ./scripts/prepare-engine.sh [linux|windows|darwin]
 #
-# The chosen OS is the host where `ffmpeg` will run. Cross-compile support
-# for the Python venv is platform-agnostic (pure Python pip installs).
+# The chosen OS is the host where the binaries will run.
 
 set -euo pipefail
 
 OS_TARGET="${1:-linux}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ASSETS="$ROOT/assets/engine"
-VENV="$ASSETS/venv"
-FFMPEG_DIR="$ASSETS/ffmpeg/$OS_TARGET-amd64"
+BIN_DIR="$ROOT/internal/engine/engine_bin"
 
-mkdir -p "$ASSETS" "$FFMPEG_DIR"
+mkdir -p "$BIN_DIR"
 
 echo "==> Target OS: $OS_TARGET"
-echo "==> Python venv: $VENV"
-echo "==> ffmpeg dir:  $FFMPEG_DIR"
+echo "==> Engine bin dir: $BIN_DIR"
 
-# ---------- Python venv ----------
-# Resolve the interpreter path according to the target OS layout so we never
-# fall back to a Windows-style Scripts/python.exe on Linux (or vice versa).
-venv_python() {
-    case "$OS_TARGET" in
-        windows) echo "$VENV/Scripts/python.exe" ;;
-        *)       echo "$VENV/bin/python" ;;
-    esac
+# ---------- yt-dlp (standalone, no Python runtime required) ----------
+fetch_ytdlp() {
+  local out="$BIN_DIR/yt-dlp"
+  if [ -x "$out" ]; then
+    echo "==> Reusing existing yt-dlp"
+    return
+  fi
+  echo "==> Downloading yt-dlp for $OS_TARGET..."
+  case "$OS_TARGET" in
+    linux)   URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux" ;;
+    windows) URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" ;;
+    darwin)  URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" ;;
+    *) echo "Unknown OS: $OS_TARGET" >&2; exit 1 ;;
+  esac
+  curl -sL "$URL" -o "$out"
+  chmod +x "$out"
+  echo "    yt-dlp: $("$out" --version 2>/dev/null || echo '?')"
 }
 
-if [ ! -d "$VENV" ]; then
-    echo "==> Creating Python virtualenv..."
-    python3 -m venv "$VENV"
-    # python -m venv drops a `.gitignore` containing `*` that would stop the
-    # committed copy (internal/engine/engine_venv) from being tracked. Remove it.
-    rm -f "$VENV/.gitignore"
-else
-    echo "==> Existing venv found at $VENV"
-    rm -f "$VENV/.gitignore"
-fi
-
-PYBIN="$(venv_python)"
-# Recreate the venv if the interpreter is missing OR pip is not bootstrapped
-# (a venv can exist with a working python binary but no pip, which breaks the
-# install step below).
-if [ ! -x "$PYBIN" ] || ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
-    echo "==> venv kullanılamaz ($PYBIN), yeniden oluşturuluyor..."
-    rm -rf "$VENV"
-    python3 -m venv "$VENV"
-    rm -f "$VENV/.gitignore"
-    PYBIN="$(venv_python)"
-    # Some distros ship a venv without pip; bootstrap it explicitly.
-    if ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
-        echo "==> pip önyükleniyor (ensurepip/get-pip)..."
-        "$PYBIN" -m ensurepip --upgrade >/dev/null 2>&1 || true
-        if ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
-            curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-                "$PYBIN" /tmp/get-pip.py >/dev/null 2>&1 || true
-        fi
-    fi
-fi
-
-if ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
-    echo "ERROR: venv python/pip hâlâ kullanılamaz: $PYBIN" >&2
-    echo "python3 ve python3-pip kurulu mu? (sudo dnf install python3 python3-pip)" >&2
-    exit 1
-fi
-
-echo "==> Upgrading pip..."
-"$PYBIN" -m pip install --upgrade pip wheel setuptools >/dev/null
-
-echo "==> Installing yt-dlp and spotdl..."
-"$PYBIN" -m pip install \
-    "yt-dlp==2026.03.17" \
-    "spotdl==4.4.4" >/dev/null
-
-# Stamp version so the Go side can verify cache freshness.
-echo "engine-version=1" > "$VENV/.engine-stamp"
-
-# ---------- ffmpeg ----------
-if [ -x "$FFMPEG_DIR/ffmpeg" ] || [ -x "$FFMPEG_DIR/ffmpeg.exe" ]; then
-    echo "==> Reusing existing ffmpeg in $FFMPEG_DIR"
-else
-    echo "==> Downloading static ffmpeg for $OS_TARGET..."
-    case "$OS_TARGET" in
-        linux)
-            URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-            TMP="$(mktemp -d)"
-            curl -sL "$URL" -o "$TMP/ffmpeg.tar.xz"
-            tar -xJf "$TMP/ffmpeg.tar.xz" -C "$TMP"
-            # Find ffmpeg and ffprobe binaries and copy only those.
-            BIN="$(find "$TMP" -type f -name ffmpeg | head -1)"
-            PROBE="$(find "$TMP" -type f -name ffprobe | head -1)"
-            [ -n "$BIN" ] && cp "$BIN" "$FFMPEG_DIR/ffmpeg" && chmod +x "$FFMPEG_DIR/ffmpeg"
-            [ -n "$PROBE" ] && cp "$PROBE" "$FFMPEG_DIR/ffprobe" && chmod +x "$FFMPEG_DIR/ffprobe"
-            rm -rf "$TMP"
-            ;;
-        windows)
-            URL="https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-            TMP="$(mktemp -d)"
-            curl -sL "$URL" -o "$TMP/ffmpeg.zip"
-            unzip -q "$TMP/ffmpeg.zip" -d "$TMP"
-            BIN="$(find "$TMP" -type f -iname 'ffmpeg.exe' | head -1)"
-            PROBE="$(find "$TMP" -type f -iname 'ffprobe.exe' | head -1)"
-            [ -n "$BIN" ] && cp "$BIN" "$FFMPEG_DIR/ffmpeg.exe"
-            [ -n "$PROBE" ] && cp "$PROBE" "$FFMPEG_DIR/ffprobe.exe"
-            rm -rf "$TMP"
-            ;;
-        darwin)
-            URL="https://evermeet.cx/ffmpeg/getrelease/zip"
-            TMP="$(mktemp -d)"
-            curl -sL "$URL" -o "$TMP/ffmpeg.zip"
-            unzip -q "$TMP/ffmpeg.zip" -d "$FFMPEG_DIR"
-            curl -sL "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o "$TMP/ffprobe.zip"
-            unzip -q "$TMP/ffprobe.zip" -d "$FFMPEG_DIR"
-            rm -rf "$TMP"
-            chmod +x "$FFMPEG_DIR/ffmpeg" "$FFMPEG_DIR/ffprobe"
-            ;;
-        *)
-            echo "Unknown OS: $OS_TARGET" >&2
-            exit 1
-            ;;
-    esac
-fi
-
-echo "==> Generating embed_assets.go for the Go side..."
-GEN="$ROOT/internal/engine/embed_assets.go"
-cat > "$GEN" <<EOF
-//go:build engine_assets
-
-// Code generated by scripts/prepare-engine.sh. DO NOT EDIT.
-
-package engine
-
-import (
-	"embed"
-	"errors"
-	"io/fs"
-)
-
-// ErrNoEmbeddedAssets is referenced by the stub build too; keep it in sync
-// with embed_stub.go.
-var ErrNoEmbeddedAssets = errors.New("engine: gömülü motor varlıkları bulunamadı (scripts/prepare-engine.sh çalıştırın)")
-
-// probeEmbedded verifies the embedded FSes are usable at runtime.
-func probeEmbedded() error {
-	if _, err := fs.ReadFile(venvFS, "engine_venv/.engine-stamp"); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return errors.New("engine: gömülü venv bozuk (engine-stamp eksik)")
-		}
-		return err
-	}
-	return nil
+# ---------- ffmpeg + ffprobe (static) ----------
+fetch_ffmpeg() {
+  local ffmpeg_out="$BIN_DIR/ffmpeg"
+  local ffprobe_out="$BIN_DIR/ffprobe"
+  if [ -x "$ffmpeg_out" ] && [ -x "$ffprobe_out" ]; then
+    echo "==> Reusing existing ffmpeg/ffprobe"
+    return
+  fi
+  echo "==> Downloading static ffmpeg/ffprobe for $OS_TARGET..."
+  local TMP
+  TMP="$(mktemp -d)"
+  case "$OS_TARGET" in
+    linux)
+      URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+      curl -sL "$URL" -o "$TMP/ffmpeg.tar.xz"
+      tar -xJf "$TMP/ffmpeg.tar.xz" -C "$TMP"
+      cp "$(find "$TMP" -type f -name ffmpeg | head -1)" "$ffmpeg_out"
+      cp "$(find "$TMP" -type f -name ffprobe | head -1)" "$ffprobe_out"
+      ;;
+    windows)
+      URL="https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+      curl -sL "$URL" -o "$TMP/ffmpeg.zip"
+      unzip -q "$TMP/ffmpeg.zip" -d "$TMP"
+      cp "$(find "$TMP" -type f -iname 'ffmpeg.exe' | head -1)" "$ffmpeg_out"
+      cp "$(find "$TMP" -type f -iname 'ffprobe.exe' | head -1)" "$ffprobe_out"
+      ;;
+    darwin)
+      curl -sL "https://evermeet.cx/ffmpeg/getrelease/zip" -o "$TMP/ffmpeg.zip"
+      unzip -q "$TMP/ffmpeg.zip" -d "$BIN_DIR"
+      curl -sL "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o "$TMP/ffprobe.zip"
+      unzip -q "$TMP/ffprobe.zip" -d "$BIN_DIR"
+      ;;
+    *)
+      echo "Unknown OS: $OS_TARGET" >&2
+      rm -rf "$TMP"
+      exit 1
+      ;;
+  esac
+  chmod +x "$ffmpeg_out" "$ffprobe_out"
+  rm -rf "$TMP"
+  echo "    ffmpeg: $("$ffmpeg_out" -version 2>/dev/null | head -1 || echo '?')"
 }
 
-//go:embed all:engine_venv
-var venvFS embed.FS
+fetch_ytdlp
+fetch_ffmpeg
 
-//go:embed all:engine_ffmpeg
-var ffmpegFS embed.FS
-EOF
+# Stamp the cache version so the Go side can verify freshness.
+echo "engine-version=2" > "$BIN_DIR/.engine-stamp"
 
-# Move the prepared dirs into a location go:embed can reach.
-mkdir -p "$ROOT/internal/engine/engine_venv" "$ROOT/internal/engine/engine_ffmpeg"
-# Use rsync if available, else cp -r.
-if command -v rsync >/dev/null 2>&1; then
-    rsync -a --delete "$VENV"/ "$ROOT/internal/engine/engine_venv/"
-    rsync -a --delete "$FFMPEG_DIR"/ "$ROOT/internal/engine/engine_ffmpeg/"
-else
-    rm -rf "$ROOT/internal/engine/engine_venv" "$ROOT/internal/engine/engine_ffmpeg"
-    cp -r "$VENV" "$ROOT/internal/engine/engine_venv"
-    cp -r "$FFMPEG_DIR" "$ROOT/internal/engine/engine_ffmpeg"
-fi
-
-echo "==> Done. Embedded engine ready at internal/engine/{engine_venv,engine_ffmpeg}."
+echo "==> Done. Embedded engine ready at $BIN_DIR (baked in via -tags engine_assets)."

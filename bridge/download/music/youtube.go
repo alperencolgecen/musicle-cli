@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"MusicLeCLI/bridge/download"
+	"MusicLeCLI/internal/engine"
 )
 
 var (
@@ -314,6 +315,11 @@ func classifyYouTubeError(err error) error {
 
 func findYTDLP() string {
 	ytdlpOnce.Do(func() {
+		// Prefer the bundled engine (self-contained build).
+		if ext, err := engine.Extract(); err == nil && ext.YTDLP != "" {
+			ytdlpPath = ext.YTDLP
+			return
+		}
 		// Common locations
 		paths := []string{
 			"yt-dlp", // in PATH
@@ -344,6 +350,11 @@ var ffmpegOnce sync.Once
 
 func findFFmpeg() string {
 	ffmpegOnce.Do(func() {
+		// Prefer the bundled engine (self-contained build).
+		if ext, err := engine.Extract(); err == nil && ext.FFMPEG != "" {
+			ffmpegPath = ext.FFMPEG
+			return
+		}
 		paths := []string{
 			"ffmpeg",
 			filepath.Join(os.Getenv("APPDIR"), "usr", "bin", "ffmpeg"),

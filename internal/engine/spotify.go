@@ -6,17 +6,10 @@ import (
 	"strings"
 )
 
-// SpotifyOptions tunes DownloadSpotify / DownloadSpotifyPlaylist.
-type SpotifyOptions struct {
-	OutputDir string
-	URLs      []string // track, album, playlist, or search queries
-	AsQuery   bool     // treat each URL as a free-text search query
-	Progress  Progress
-}
-
-// DownloadSpotify downloads Spotify URLs (track / album / playlist) via the
-// embedded spotdl engine. spotdl detects the URL type internally so a single
-// helper covers all three cases plus search queries.
+// DownloadSpotify downloads Spotify URLs (track / album / playlist) to mp3
+// (320k) with an embedded cover. yt-dlp resolves the Spotify page and fetches
+// the audio from YouTube, so this reuses the same pipeline as YouTube — no
+// Spotify API or token is involved.
 func DownloadSpotify(opt SpotifyOptions) error {
 	ext, err := Extract()
 	if err != nil {
@@ -24,28 +17,9 @@ func DownloadSpotify(opt SpotifyOptions) error {
 	}
 	urls := sanitizeSpotifyURLs(opt.URLs)
 	if len(urls) == 0 {
-		return fmt.Errorf("spotdl: en az bir Spotify URL veya sorgu gerekli")
+		return fmt.Errorf("yt-dlp: en az bir Spotify URL veya sorgu gerekli")
 	}
-
-	args := []string{
-		"-m", "musicle_spotdl",
-		"--output", opt.OutputDir,
-	}
-	if opt.AsQuery {
-		args = append(args, "--query")
-	}
-	args = append(args, urls...)
-
-	return Run(ext, RunOptions{
-		Args:       args,
-		Progress:   opt.Progress,
-		JSONStdout: true,
-		WorkDir:    ext.Root,
-		Env: []string{
-			"MUSICLE_FFMPEG=" + ext.FFmpegBin,
-			"PYTHONPATH=" + scriptPathEnv(),
-		},
-	})
+	return downloadWithYTDLP(ext, urls, opt.OutputDir, opt.Progress)
 }
 
 // DownloadSpotifyPlaylist is the public name for playlist / album flows.
@@ -54,8 +28,7 @@ func DownloadSpotifyPlaylist(opt SpotifyOptions) error {
 	return DownloadSpotify(opt)
 }
 
-// sanitizeSpotifyURLs trims whitespace and drops empty entries; spotdl is
-// tolerant of any URL shape, so we don't normalise the URI itself.
+// sanitizeSpotifyURLs trims whitespace and drops empty entries.
 func sanitizeSpotifyURLs(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, raw := range in {
@@ -68,17 +41,11 @@ func sanitizeSpotifyURLs(in []string) []string {
 	return out
 }
 
-// scriptPathEnv returns a PYTHONPATH value that lets the embedded python
-// find musicle_ytdlp.py / musicle_spotdl.py / _musicle_helpers.py.
-//
-// The helpers live alongside the extracted venv at <Root>/scripts. The venv
-// itself is the active interpreter, so its site-packages already resolve;
-// we only need to expose our helper directory.
+// scriptPathEnv is retained only to avoid breaking callers that referenced it;
+// the new engine has no Python helpers, so it simply returns the cache root.
 func scriptPathEnv() string {
 	if extracted == nil {
-		// Best-effort fallback if scriptPathEnv is invoked before Extract().
-		// The Run() that follows will surface a clearer error.
-		return "scripts"
+		return "engine_bin"
 	}
-	return filepath.Join(extracted.Root, "scripts") //nolint:gosec // computed from cacheRoot
+	return filepath.Join(extracted.Root, "engine_bin")
 }

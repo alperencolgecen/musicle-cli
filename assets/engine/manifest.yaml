@@ -1,14 +1,9 @@
 # Embedded engine manifest
 
-Versions for the bundled Python download engine. Used by `prepare-engine` to
-rebuild `assets/engine/venv/` deterministically before the Go embed.
+Standalone tools bundled into the binary (baked in with -tags engine_assets).
+Used by scripts/prepare-engine.sh to fetch deterministic binaries before the
+Go embed. Bump `version` whenever the bundled tools change.
 
-When the engine code in `internal/engine/` reads `Manifest`, it verifies the
-extracted cache version matches this value. Bump `version` whenever Python
-packages or the embedded binaries change.
-
-spotdl:    4.4.4
-yt-dlp:    2026.03.17
-ffmpeg:    6.1.1
-python:    3.11
-version:   1
+yt-dlp:  2026.03.17
+ffmpeg:  6.1.1
+version: 2

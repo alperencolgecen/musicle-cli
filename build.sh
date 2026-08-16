@@ -11,30 +11,24 @@ fi
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-# prepare_engine builds the embedded Python download engine (venv + spotdl +
-# yt-dlp + static ffmpeg) for the given target OS and copies it under
-# internal/engine/ so `go:embed` can bake it into the binary. It is a no-op
-# (with a warning) when python3 is unavailable, in which case `go build` will
-# fail because the embedded assets are missing.
+# prepare_engine downloads the self-contained engine (standalone yt-dlp +
+# static ffmpeg/ffprobe) for the given target OS into internal/engine/engine_bin
+# so `go:embed` can bake it into the binary. Requires network access (curl).
 prepare_engine() {
   local os="$1"
-  if command -v python3 >/dev/null 2>&1; then
-    echo "==> Gömülü motor hazırlanıyor ($os)..."
-    if ./"$ROOT/scripts/prepare-engine.sh" "$os"; then
-      echo "==> Motor hazır."
-    else
-      echo "WARNING: motor hazırlanamadı; etiketsiz derlenecek."
-    fi
+  echo "==> Gömülü motor hazırlanıyor ($os)..."
+  if ./"$ROOT/scripts/prepare-engine.sh" "$os"; then
+    echo "==> Motor hazır."
   else
-    echo "WARNING: python3 yok, gömülü motor atlanıyor (legacy yöntem kullanılacak)."
+    echo "WARNING: motor hazırlanamadı; build -tags engine_assets başarısız olabilir."
   fi
 }
 
-# Govulmotor varliklari (internal/engine/engine_venv + engine_ffmpeg) repoya
-# islenmez; .gitignore'da tutulur. `prepare_engine` adimi onlari uretip
-# internal/engine altina kopyalar, ardindan `go build -tags engine_assets`
-# go:embed ile binary'ye gomer. Etiketsiz derlemede govulmotor gömülmez ve
-# bridge calisma aninda legacy yonteme duser.
+# Gömülü motor varlıkları (internal/engine/engine_bin: yt-dlp + ffmpeg/ffprobe)
+# repoya işlenmez; .gitignore'da tutulur. `prepare_engine` adımı onları indirip
+# internal/engine/engine_bin altına koyar, ardından `go build -tags
+# engine_assets` go:embed ile binary'ye gömer. Etiketsiz derlemede gömülü motor
+# yoktur ve bridge çalışma anında legacy yönteme düşer.
 
 echo "Select target OS:"
 echo "1) Linux"
@@ -55,6 +49,7 @@ case "$os_choice" in
     echo "==> Building binary..."
     prepare_engine linux
     CGO_ENABLED=1 $GO build -tags engine_assets -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli .
+    -upx --best --lzma build/musicle-cli 2>/dev/null || true
 
     case "$fmt" in
       1)
@@ -182,6 +177,7 @@ SPEC
     echo "==> Building..."
     prepare_engine windows
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build -tags engine_assets -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli.exe .
+    -upx --best --lzma build/musicle-cli.exe 2>/dev/null || true
     if [ "$fmt" = "2" ]; then
       mkdir -p build/musicle-cli_Windows_x86_64
       cp build/musicle-cli.exe build/musicle-cli_Windows_x86_64/
@@ -200,6 +196,7 @@ SPEC
     echo "==> Building..."
     prepare_engine darwin
     GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $GO build -tags engine_assets -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli-darwin .
+    -upx --best --lzma build/musicle-cli-darwin 2>/dev/null || true
     if [ "$fmt" = "1" ]; then
       mkdir -p build/musicle-cli_macOS_x86_64
       cp build/musicle-cli-darwin build/musicle-cli_macOS_x86_64/musicle-cli

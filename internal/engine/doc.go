@@ -1,18 +1,18 @@
-// Package engine bundles a fully self-contained Python download engine
-// (Python interpreter + spotdl + yt-dlp + static ffmpeg) into the musicle-cli
-// binary via go:embed.
+// Package engine bundles a fully self-contained download engine (yt-dlp +
+// static ffmpeg/ffprobe) into the musicle-cli binary via go:embed.
 //
 // The flow:
 //
-//  1. `scripts/prepare-engine.sh` builds a venv at assets/engine/venv and
-//     downloads a static ffmpeg into assets/engine/ffmpeg/<os>-<arch>/,
-//     then copies both trees to internal/engine/engine_{venv,ffmpeg}/ so
-//     `go:embed` can pick them up.
+//  1. scripts/prepare-engine.sh downloads yt-dlp and a static ffmpeg/ffprobe
+//     into internal/engine/engine_bin/ (no Python, no venv), then go:embed
+//     bakes them into the binary with -tags engine_assets.
 //
-//  2. At startup, Extract() unpacks those trees into
-//     UserCacheDir/musicle/engine-v1/ (a single-shot copy guarded by a
+//  2. At startup, Extract() unpacks those binaries into
+//     UserCacheDir/musicle/engine-v2/ (a single-shot copy guarded by a
 //     sentinel file). Subsequent runs reuse the cache.
 //
-//  3. The wrappers in this package invoke the embedded python with the
-//     right arguments (spotdl / yt-dlp) and stream progress as JSON.
+//  3. The wrappers in this package invoke the embedded yt-dlp to fetch audio
+//     and the embedded ffmpeg to mux it into a 320k MP3 with an embedded
+//     cover (APIC). Spotify URLs are resolved by yt-dlp itself, so no Spotify
+//     API or token is involved.
 package engine

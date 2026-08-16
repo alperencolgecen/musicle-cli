@@ -1,0 +1,255 @@
+package engine
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// downloadWithYTDLP drives the bundled yt-dlp + ffmpeg to turn each URL into a
+// 320k MP3 with an embedded cover (APIC). All work is done by the embedded
+// binaries; this package only orchestrates them and streams progress.
+func downloadWithYTDLP(ext *Extracted, urls []string, outDir string, progress Progress) error {
+	if progress == nil {
+		progress = func(int, string) {}
+	}
+	if len(urls) == 0 {
+		return fmt.Errorf("en az bir URL gerekli")
+	}
+	for i, u := range urls {
+		progress(0, fmt.Sprintf("İndiriliyor %d/%d...", i+1, len(urls)))
+		if err := downloadOne(ext, u, outDir, progress); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type ytdlpMeta struct {
+	Title  string `json:"title"`
+	Artist string `json:"artist"`
+}
+
+// downloadOne downloads a single URL: metadata + bestaudio + thumbnail via
+// yt-dlp, then muxes to MP3 with the cover embedded via ffmpeg.
+func downloadOne(ext *Extracted, url, outDir string, progress Progress) error {
+	tmp, err := os.MkdirTemp("", "musicle_yt_")
+	if err != nil {
+		return fmt.Errorf("geçici dizin: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	// 1) metadata (title) for a clean output filename.
+	meta := ytdlpMeta{}
+	if raw, e := runYTDLPJSON(ext.YTDLP, url); e == nil && raw != "" {
+		_ = json.Unmarshal([]byte(raw), &meta)
+	}
+	name := sanitizeFilename(meta.Title)
+	if name == "" {
+		name = "track"
+	}
+
+	audioTpl := filepath.Join(tmp, "audio.%(ext)s")
+	thumbBase := filepath.Join(tmp, "audio")
+
+	// 2) download bestaudio + thumbnail.
+	dlArgs := []string{
+		"-f", "bestaudio",
+		"-o", audioTpl,
+		"--write-thumbnail",
+		"--no-playlist",
+		"--no-warnings",
+		"--", url,
+	}
+	if err := runYTDLP(ext.YTDLP, dlArgs, progress); err != nil {
+		return fmt.Errorf("yt-dlp indirme: %w", err)
+	}
+
+	audioFile, err := findAudioFile(tmp, "audio")
+	if err != nil {
+		return err
+	}
+	thumbFile := findThumbnail(thumbBase)
+
+	// 3) ffmpeg: audio -> mp3 320k, attach cover as APIC.
+	outPath := filepath.Join(outDir, name+".mp3")
+	args := []string{"-y", "-i", audioFile}
+	if thumbFile != "" {
+		args = append(args, "-i", thumbFile)
+	}
+	args = append(args, "-map", "0:a")
+	if thumbFile != "" {
+		args = append(args, "-map", "1")
+	}
+	args = append(args, "-c:a", "libmp3lame", "-b:a", "320k")
+	if thumbFile != "" {
+		args = append(args, "-c:v", "copy", "-id3v2_version", "3")
+	}
+	args = append(args, outPath)
+
+	if err := runFFMPEG(ext.FFMPEG, args, progress); err != nil {
+		return fmt.Errorf("ffmpeg dönüştürme: %w", err)
+	}
+	progress(100, "Tamamlandı: "+name+".mp3")
+	return nil
+}
+
+// runYTDLPJSON runs yt-dlp --dump-json and returns the first JSON object line.
+func runYTDLPJSON(bin, url string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--dump-json", "--no-warnings", "--no-playlist", "--", url)
+	var out, serr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &serr
+	_ = cmd.Run()
+	if s := firstJSONLine(out.String()); s != "" {
+		return s, nil
+	}
+	return "", fmt.Errorf("yt-dlp json: %s", strings.TrimSpace(serr.String()))
+}
+
+// runYTDLP runs yt-dlp, forwarding [download] percentage progress.
+func runYTDLP(bin string, args []string, progress Progress) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	scanYTDLPProgress(stderr, progress)
+	if err := cmd.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runFFMPEG runs ffmpeg, forwarding conversion progress (duration-based).
+func runFFMPEG(bin string, args []string, progress Progress) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	scanFFMPEGProgress(stderr, progress)
+	if err := cmd.Wait(); err != nil {
+		return err
+	}
+	return nil
+}
+
+var (
+	dlPctRE  = regexp.MustCompile(`\[download\]\s+([0-9]+(?:\.[0-9]+)?)%`)
+	durRE    = regexp.MustCompile(`Duration:\s+(\d+):(\d+):(\d+)`)
+	timeRE   = regexp.MustCompile(`time=(\d+):(\d+):(\d+)`)
+)
+
+func scanYTDLPProgress(r io.Reader, progress Progress) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if m := dlPctRE.FindStringSubmatch(line); m != nil {
+			if p, err := strconv.ParseFloat(m[1], 64); err == nil {
+				progress(int(p), "İndiriliyor...")
+			}
+		}
+	}
+}
+
+func scanFFMPEGProgress(r io.Reader, progress Progress) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var total float64
+	for sc.Scan() {
+		line := sc.Text()
+		if total == 0 {
+			if m := durRE.FindStringSubmatch(line); m != nil {
+				total = hmsToSec(m)
+			}
+		}
+		if total > 0 {
+			if m := timeRE.FindStringSubmatch(line); m != nil {
+				cur := hmsToSec(m)
+				p := int(cur / total * 100)
+				if p > 100 {
+					p = 100
+				}
+				progress(p, "MP3'e çevriliyor...")
+			}
+		}
+	}
+}
+
+func hmsToSec(m []string) float64 {
+	h, _ := strconv.Atoi(m[1])
+	mi, _ := strconv.Atoi(m[2])
+	s, _ := strconv.Atoi(m[3])
+	return float64(h*3600 + mi*60 + s)
+}
+
+func firstJSONLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "{") {
+			return line
+		}
+	}
+	return ""
+}
+
+func findAudioFile(dir, base string) (string, error) {
+	matches, _ := filepath.Glob(filepath.Join(dir, base+".*"))
+	for _, m := range matches {
+		ext := strings.ToLower(filepath.Ext(m))
+		switch ext {
+		case ".webm", ".m4a", ".opus", ".ogg", ".mp4", ".flac":
+			return m, nil
+		}
+	}
+	return "", fmt.Errorf("yt-dlp ses dosyası üretmedi")
+}
+
+func findThumbnail(base string) string {
+	for _, ext := range []string{"jpg", "png", "webp"} {
+		p := base + "." + ext
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+func sanitizeFilename(name string) string {
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			return '_'
+		}
+		return r
+	}, name)
+	name = strings.TrimSpace(name)
+	if len(name) > 200 {
+		name = name[:200]
+	}
+	return name
+}
