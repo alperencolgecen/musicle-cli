@@ -258,6 +258,7 @@ func (m *SettingsModel) applyActiveTab() tea.Cmd {
 // wrapping back to the first.
 func (m *SettingsModel) cycleTab() {
 	m.activeTab = (m.activeTab + 1) % len(settingsTabs)
+	m.scroll = 0 // reset long-text scroll when switching tabs
 }
 
 // cycleFocus exists for MainModel F1 player-bar focus cycling compatibility.
