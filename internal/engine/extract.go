@@ -92,10 +92,10 @@ func doExtract() (*Extracted, error) {
 	ffmpegDst := filepath.Join(root, "ffmpeg")
 	scriptsDst := filepath.Join(root, "scripts")
 
-	if err := copyFS(venvFS, ".", venvDst); err != nil {
+	if err := copyFS(venvFS, "engine_venv", venvDst); err != nil {
 		return nil, fmt.Errorf("engine: venv çıkarılamadı: %w", err)
 	}
-	if err := copyFS(ffmpegFS, ".", ffmpegDst); err != nil {
+	if err := copyFS(ffmpegFS, "engine_ffmpeg", ffmpegDst); err != nil {
 		return nil, fmt.Errorf("engine: ffmpeg çıkarılamadı: %w", err)
 	}
 	// Helper scripts must be on disk so the embedded python can import them.

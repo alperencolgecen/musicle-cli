@@ -8,11 +8,13 @@ import (
 	"io/fs"
 )
 
+// ErrNoEmbeddedAssets is referenced by the stub build too; keep it in sync
+// with embed_stub.go.
 var ErrNoEmbeddedAssets = errors.New("engine: gömülü motor varlıkları bulunamadı (scripts/prepare-engine.sh çalıştırın)")
 
 // probeEmbedded verifies the embedded FSes are usable at runtime.
 func probeEmbedded() error {
-	if _, err := fs.ReadFile(venvFS, ".engine-stamp"); err != nil {
+	if _, err := fs.ReadFile(venvFS, "engine_venv/.engine-stamp"); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return errors.New("engine: gömülü venv bozuk (engine-stamp eksik)")
 		}

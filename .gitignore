@@ -63,8 +63,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -75,8 +73,18 @@ wheels/
 
 # Virtual environments
 venv/
-env/
-ENV/
+
+# NOTE: the embedded engine venv at internal/engine/engine_venv is deliberately
+# COMMITTED (it is the runtime download engine). The generic Python ignores
+# above (lib/, *.so, ...) would exclude it, so we re-include it explicitly.
+# The prepare working dir (assets/engine) stays ignored — it is only an
+# intermediate used to build the committed copy.
+!internal/engine/engine_venv/
+!internal/engine/engine_venv/**
+!internal/engine/engine_ffmpeg/
+!internal/engine/engine_ffmpeg/**
+assets/engine/venv/
+assets/engine/ffmpeg/
 
 # AppImage build artifacts
 *.AppImage

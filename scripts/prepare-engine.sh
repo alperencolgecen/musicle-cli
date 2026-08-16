@@ -38,21 +38,38 @@ venv_python() {
 if [ ! -d "$VENV" ]; then
     echo "==> Creating Python virtualenv..."
     python3 -m venv "$VENV"
+    # python -m venv drops a `.gitignore` containing `*` that would stop the
+    # committed copy (internal/engine/engine_venv) from being tracked. Remove it.
+    rm -f "$VENV/.gitignore"
 else
     echo "==> Existing venv found at $VENV"
+    rm -f "$VENV/.gitignore"
 fi
 
 PYBIN="$(venv_python)"
-if [ ! -x "$PYBIN" ]; then
-    echo "==> venv python kullanılamaz ($PYBIN), venv yeniden oluşturuluyor..."
+# Recreate the venv if the interpreter is missing OR pip is not bootstrapped
+# (a venv can exist with a working python binary but no pip, which breaks the
+# install step below).
+if [ ! -x "$PYBIN" ] || ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
+    echo "==> venv kullanılamaz ($PYBIN), yeniden oluşturuluyor..."
     rm -rf "$VENV"
     python3 -m venv "$VENV"
+    rm -f "$VENV/.gitignore"
     PYBIN="$(venv_python)"
+    # Some distros ship a venv without pip; bootstrap it explicitly.
+    if ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
+        echo "==> pip önyükleniyor (ensurepip/get-pip)..."
+        "$PYBIN" -m ensurepip --upgrade >/dev/null 2>&1 || true
+        if ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
+            curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+                "$PYBIN" /tmp/get-pip.py >/dev/null 2>&1 || true
+        fi
+    fi
 fi
 
-if [ ! -x "$PYBIN" ]; then
-    echo "ERROR: venv python hâlâ bulunamadı: $PYBIN" >&2
-    echo "python3 kurulu mu? (gerekirse: sudo dnf install python3)" >&2
+if ! "$PYBIN" -m pip --version >/dev/null 2>&1; then
+    echo "ERROR: venv python/pip hâlâ kullanılamaz: $PYBIN" >&2
+    echo "python3 ve python3-pip kurulu mu? (sudo dnf install python3 python3-pip)" >&2
     exit 1
 fi
 
@@ -61,7 +78,7 @@ echo "==> Upgrading pip..."
 
 echo "==> Installing yt-dlp and spotdl..."
 "$PYBIN" -m pip install \
-    "yt-dlp==2024.12.13" \
+    "yt-dlp==2026.03.17" \
     "spotdl==4.4.4" >/dev/null
 
 # Stamp version so the Go side can verify cache freshness.
@@ -132,7 +149,7 @@ var ErrNoEmbeddedAssets = errors.New("engine: gömülü motor varlıkları bulun
 
 // probeEmbedded verifies the embedded FSes are usable at runtime.
 func probeEmbedded() error {
-	if _, err := fs.ReadFile(venvFS, ".engine-stamp"); err != nil {
+	if _, err := fs.ReadFile(venvFS, "engine_venv/.engine-stamp"); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return errors.New("engine: gömülü venv bozuk (engine-stamp eksik)")
 		}
