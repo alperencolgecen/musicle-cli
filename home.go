@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -560,7 +561,7 @@ func (m *HomeModel) openEditModal() {
 	song := songs[idx]
 	m.editTitle.SetValue(song.Title)
 	m.editArtist.SetValue(song.Artist)
-	m.editDuration.SetValue(song.Duration)
+	m.editDuration.SetValue(normalizeDuration(song.Duration))
 	m.editFocus = 0
 	m.editTitle.Focus()
 	m.editModalOpen = true
@@ -669,6 +670,7 @@ func (m *HomeModel) saveEditModal() (tea.Model, tea.Cmd) {
 	if duration == "" {
 		duration = song.Duration
 	}
+	duration = normalizeDuration(duration)
 	pl := state.Current.CurrentPlaylist
 	if pl == nil {
 		m.closeEditModal()
@@ -1564,7 +1566,7 @@ func (m *HomeModel) renderSongs(w, offset, max int) string {
 		numStr := numCol.Render(fmt.Sprintf("%d.", i+1))
 		titleR := titleCol.Render(titleStyle.Render(title))
 		artistR := artistCol.Render(artistStyle.Render(artist))
-		dur := durCol.Render(song.Duration)
+		dur := durCol.Render(normalizeDuration(song.Duration))
 
 		isThisFocused := isFocused && m.songFocusIdx == i
 		af := m.songActionFocus
@@ -1725,6 +1727,10 @@ func (m *HomeModel) viewPlaylistInfo(bodyH int) string {
 }
 
 func parseDuration(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
 	parts := strings.Split(s, ":")
 	if len(parts) == 2 {
 		var m, sec int
@@ -1732,7 +1738,31 @@ func parseDuration(s string) int {
 		fmt.Sscanf(parts[1], "%d", &sec)
 		return m*60 + sec
 	}
+	if len(parts) == 1 {
+		var sec int
+		fmt.Sscanf(parts[0], "%d", &sec)
+		return sec
+	}
 	return 0
+}
+
+// normalizeDuration ensures a song duration is rendered as mm:ss. Values that
+// are already in mm:ss form are passed through; bare integers (raw seconds,
+// e.g. legacy song_list.txt entries) are converted so the list always shows
+// dakika:saniye.
+func normalizeDuration(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "00:00"
+	}
+	if strings.Contains(s, ":") {
+		return s
+	}
+	secs, err := strconv.Atoi(s)
+	if err != nil {
+		return s
+	}
+	return fmt.Sprintf("%02d:%02d", secs/60, secs%60)
 }
 
 func formatDuration(totalSecs int) string {

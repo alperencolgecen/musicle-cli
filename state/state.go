@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -330,11 +331,30 @@ func parseSongList(listPath, plDir string) []Song {
 			Title:     parts[1],
 			Artist:    parts[2],
 			DateAdded: parts[3],
-			Duration:  strings.TrimSpace(parts[4]),
+			Duration:  normalizeDuration(parts[4]),
 			FilePath:  filepath.Join(plDir, parts[0]),
 		})
 	}
 	return songs
+}
+
+// normalizeDuration ensures a song duration is rendered as mm:ss. Values that
+// are already in mm:ss form are passed through; bare integers (raw seconds,
+// e.g. legacy song_list.txt entries) are converted so durations are always
+// stored and shown as dakika:saniye.
+func normalizeDuration(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "00:00"
+	}
+	if strings.Contains(s, ":") {
+		return s
+	}
+	secs, err := strconv.Atoi(s)
+	if err != nil {
+		return s
+	}
+	return fmt.Sprintf("%02d:%02d", secs/60, secs%60)
 }
 
 // CreateProfileStructure writes the full directory/file scaffold for a new profile
@@ -452,7 +472,7 @@ func ReadSongs(listPath string) ([]Song, error) {
 			Title:     parts[1],
 			Artist:    parts[2],
 			DateAdded: parts[3],
-			Duration:  strings.TrimSpace(parts[4]),
+			Duration:  normalizeDuration(parts[4]),
 		})
 	}
 	return songs, nil
@@ -462,7 +482,7 @@ func ReadSongs(listPath string) ([]Song, error) {
 func WriteSongs(listPath string, songs []Song) error {
 	var buf strings.Builder
 	for _, s := range songs {
-		buf.WriteString(strings.Join([]string{s.Filename, s.Title, s.Artist, s.DateAdded, s.Duration}, "|"))
+		buf.WriteString(strings.Join([]string{s.Filename, s.Title, s.Artist, s.DateAdded, normalizeDuration(s.Duration)}, "|"))
 		buf.WriteByte('\n')
 	}
 	return os.WriteFile(listPath, []byte(buf.String()), 0644)
@@ -505,7 +525,7 @@ func UpdateSong(listPath, filename, title, artist, duration string) error {
 				songs[i].Artist = artist
 			}
 			if duration != "" {
-				songs[i].Duration = duration
+				songs[i].Duration = normalizeDuration(duration)
 			}
 			found = true
 			break
