@@ -9,6 +9,36 @@ if [ -z "$GO" ]; then
   exit 1
 fi
 
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+
+# prepare_engine builds the embedded Python download engine (venv + spotdl +
+# yt-dlp + static ffmpeg) for the given target OS and regenerates the Go embed
+# glue. It is a no-op (with a warning) when python3 is unavailable, in which
+# case the binary is built without the engine_assets tag and falls back to the
+# legacy pipeline at runtime.
+prepare_engine() {
+  local os="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    echo "==> Gömülü motor hazırlanıyor ($os)..."
+    if ./"$ROOT/scripts/prepare-engine.sh" "$os"; then
+      echo "==> Motor hazır."
+    else
+      echo "WARNING: motor hazırlanamadı; etiketsiz derlenecek."
+    fi
+  else
+    echo "WARNING: python3 yok, gömülü motor atlanıyor (legacy yöntem kullanılacak)."
+  fi
+}
+
+# engine_tag returns -tags engine_assets when the prepared venv exists, else "".
+engine_tag() {
+  if [ -d "$ROOT/internal/engine/engine_venv" ]; then
+    echo "-tags engine_assets"
+  else
+    echo ""
+  fi
+}
+
 echo "Select target OS:"
 echo "1) Linux"
 echo "2) Windows"
@@ -26,7 +56,8 @@ case "$os_choice" in
 
     mkdir -p build
     echo "==> Building binary..."
-    CGO_ENABLED=1 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli .
+    prepare_engine linux
+    CGO_ENABLED=1 $GO build $(engine_tag) -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli .
 
     case "$fmt" in
       1)
@@ -152,7 +183,8 @@ SPEC
     read -p "Choice [1-2]: " fmt
     mkdir -p build
     echo "==> Building..."
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli.exe .
+    prepare_engine windows
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $GO build $(engine_tag) -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli.exe .
     if [ "$fmt" = "2" ]; then
       mkdir -p build/musicle-cli_Windows_x86_64
       cp build/musicle-cli.exe build/musicle-cli_Windows_x86_64/
@@ -169,7 +201,8 @@ SPEC
     read -p "Choice [1-2]: " fmt
     mkdir -p build
     echo "==> Building..."
-    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $GO build -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli-darwin .
+    prepare_engine darwin
+    GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $GO build $(engine_tag) -ldflags="-s -w -X main.version=$VERSION" -o build/musicle-cli-darwin .
     if [ "$fmt" = "1" ]; then
       mkdir -p build/musicle-cli_macOS_x86_64
       cp build/musicle-cli-darwin build/musicle-cli_macOS_x86_64/musicle-cli
