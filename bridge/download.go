@@ -10,6 +10,7 @@ import (
 	"MusicLeCLI/bridge/download/music"
 	"MusicLeCLI/bridge/download/playlist"
 	"MusicLeCLI/internal/engine"
+	"MusicLeCLI/state"
 )
 
 // engineDisabled reports whether the user opted out of the embedded engine
