@@ -62,7 +62,7 @@ echo "==> Upgrading pip..."
 echo "==> Installing yt-dlp and spotdl..."
 "$PYBIN" -m pip install \
     "yt-dlp==2024.12.13" \
-    "spotdl==4.4.0" >/dev/null
+    "spotdl==4.4.4" >/dev/null
 
 # Stamp version so the Go side can verify cache freshness.
 echo "engine-version=1" > "$VENV/.engine-stamp"
