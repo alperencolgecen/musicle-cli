@@ -476,7 +476,11 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 	}
 
 	jsonCtx, jsonCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	metaArgs := append([]string{"--dump-json", "--no-warnings", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	// NOTE: do NOT force --extractor-args youtube:player_client=web. The web
+	// client frequently returns "Requested format is not available" because it
+	// does not expose a compatible audio-only stream; letting yt-dlp auto-select
+	// the client (android_vr, etc.) avoids that crash.
+	metaArgs := append([]string{"--dump-json", "--no-warnings", "--no-playlist"}, ytdlpCookieFlag()...)
 	metaArgs = append(metaArgs, watchURL)
 	metaCmd := exec.CommandContext(jsonCtx, ytdlp, metaArgs...)
 	var metaJSON bytes.Buffer
@@ -510,16 +514,23 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 		cb(20, fmt.Sprintf("Downloading %s...", title))
 	}
 
-	// Download best audio to stdout and capture in memory
+	// Download best audio to a temp file (any container). Reading into a file
+	// instead of stdout sidesteps the "[ext=webm] not available" failure and
+	// lets the conversion step (ffmpeg) handle WebM/Opus/M4A/Ogg uniformly.
+	tmpDir, err := os.MkdirTemp("", "musicle_yt_")
+	if err != nil {
+		return nil, nil, fmt.Errorf("temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	dlArgs := append([]string{"-f", "bestaudio[ext=webm]", "-o", "-", "--no-warnings", "--no-playlist", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	dlArgs := append([]string{"-f", "bestaudio", "-o", filepath.Join(tmpDir, "audio.%(ext)s"), "--no-warnings", "--no-playlist"}, ytdlpCookieFlag()...)
 	dlArgs = append(dlArgs, watchURL)
 	cmd := exec.CommandContext(ctx, ytdlp, dlArgs...)
 
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
+	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 
 	if err := cmd.Run(); err != nil {
@@ -530,17 +541,21 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 		return nil, nil, fmt.Errorf("yt-dlp: %w", err)
 	}
 
-	rawAudio := outBuf.Bytes()
-	if len(rawAudio) < 64 {
+	srcFile, err := findDownloadedAudio(tmpDir, "audio")
+	if err != nil {
 		stderrStr := strings.TrimSpace(errBuf.String())
-		return nil, nil, fmt.Errorf("yt-dlp output too small (%d bytes)\nstderr: %s", len(rawAudio), stderrStr)
+		return nil, nil, fmt.Errorf("yt-dlp output missing: %w\n%s", err, stderrStr)
 	}
 
-	// Verify EBML/WebM magic bytes
-	if rawAudio[0] != 0x1A || rawAudio[1] != 0x45 || rawAudio[2] != 0xDF || rawAudio[3] != 0xA3 {
-		return nil, nil, fmt.Errorf("yt-dlp output is not WebM (magic: %02x %02x %02x %02x), no webm audio for this video",
-			rawAudio[0], rawAudio[1], rawAudio[2], rawAudio[3])
+	rawAudio, err := os.ReadFile(srcFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read audio: %w", err)
 	}
+	if len(rawAudio) < 64 {
+		return nil, nil, fmt.Errorf("yt-dlp output too small (%d bytes)", len(rawAudio))
+	}
+
+	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(srcFile)), ".")
 
 	if cb != nil {
 		cb(90, "Downloaded, processing...")
@@ -552,11 +567,25 @@ func downloadWithYTDLP(videoID string, cb download.ProgressCallback) (*download.
 		Album:       channel,
 		DurationSec: duration,
 		StreamURL:   watchURL,
-		Format:      "webm",
+		Format:      format,
 		ContentLen:  int64(len(rawAudio)),
 		Thumbnail:   thumbnail,
 	}
 	return track, rawAudio, nil
+}
+
+// findDownloadedAudio returns the path of the audio file produced by yt-dlp
+// inside dir with the given base name (any audio container extension).
+func findDownloadedAudio(dir, base string) (string, error) {
+	matches, _ := filepath.Glob(filepath.Join(dir, base+".*"))
+	for _, m := range matches {
+		ext := strings.ToLower(filepath.Ext(m))
+		switch ext {
+		case ".webm", ".m4a", ".opus", ".ogg", ".mp4", ".flac", ".mp3":
+			return m, nil
+		}
+	}
+	return "", fmt.Errorf("yt-dlp audio file not found in %s", dir)
 }
 
 // DownloadYouTubeTrackDirectMP3 downloads a YouTube track directly as MP3 using yt-dlp + ffmpeg.
@@ -583,7 +612,7 @@ func DownloadYouTubeTrackDirectMP3(videoID string, cb download.ProgressCallback)
 	}
 
 	jsonCtx, jsonCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	metaArgs := append([]string{"--dump-json", "--no-warnings", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	metaArgs := append([]string{"--dump-json", "--no-warnings", "--no-playlist"}, ytdlpCookieFlag()...)
 	metaArgs = append(metaArgs, watchURL)
 	metaCmd := exec.CommandContext(jsonCtx, ytdlp, metaArgs...)
 	var metaJSON bytes.Buffer
@@ -628,7 +657,7 @@ func DownloadYouTubeTrackDirectMP3(videoID string, cb download.ProgressCallback)
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	dlArgs := append([]string{"-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", tmpMp3Name, "--no-warnings", "--no-playlist", "--extractor-args", "youtube:player_client=web"}, ytdlpCookieFlag()...)
+	dlArgs := append([]string{"-x", "--audio-format", "mp3", "--audio-quality", "0", "-o", tmpMp3Name, "--no-warnings", "--no-playlist"}, ytdlpCookieFlag()...)
 	dlArgs = append(dlArgs, watchURL)
 	cmd := exec.CommandContext(ctx, ytdlp, dlArgs...)
 

@@ -65,8 +65,9 @@ func downloadOne(ext *Extracted, url, outDir string, progress Progress) error {
 	// 2) download bestaudio + thumbnail. YouTube occasionally serves a
 	// transient 403 on the media, so we retry a few times; if the audio file
 	// shows up despite a non-zero exit (e.g. only the thumbnail step failed)
-	// we accept it.
-	dlArgs := []string{
+	// we accept it. On each retry we rotate the YouTube player client, since a
+	// throttled client signature is a common cause of repeated 403s.
+	baseArgs := []string{
 		"-f", "bestaudio",
 		"-o", audioTpl,
 		"--write-thumbnail",
@@ -74,10 +75,18 @@ func downloadOne(ext *Extracted, url, outDir string, progress Progress) error {
 		"--no-warnings",
 		"--retries", "3",
 		"--fragment-retries", "3",
-		"--", url,
 	}
+	// yt-dlp auto-selects a working client by default; these are fallbacks used
+	// only when a retry is needed.
+	clientFallbacks := []string{"android_vr", "web", "ios", "tv", "web_synthetic", "android", "mweb"}
 	var dlErr error
 	for attempt := 1; attempt <= 3; attempt++ {
+		dlArgs := append([]string{}, baseArgs...)
+		if attempt > 1 {
+			client := clientFallbacks[(attempt-2)%len(clientFallbacks)]
+			dlArgs = append(dlArgs, "--extractor-args", "youtube:player_client="+client)
+		}
+		dlArgs = append(dlArgs, "--", url)
 		dlErr = runYTDLP(ext.YTDLP, dlArgs, progress)
 		if dlErr == nil {
 			break
