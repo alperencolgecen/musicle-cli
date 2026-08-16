@@ -13,10 +13,9 @@ import (
 // Extracted holds the on-disk paths to the fully extracted engine tools. It is
 // the value returned by Extract() and is what the wrappers operate on.
 type Extracted struct {
-	Root     string // cache root, e.g. ~/.cache/musicle/engine-v2
-	YTDLP    string // absolute path to the embedded yt-dlp binary
-	FFMPEG   string // absolute path to the embedded ffmpeg binary
-	FFPROBE  string // absolute path to the embedded ffprobe binary
+	Root   string // cache root, e.g. ~/.cache/musicle/engine-v2
+	YTDLP  string // absolute path to the embedded yt-dlp binary
+	FFMPEG string // absolute path to the embedded ffmpeg binary
 }
 
 // cacheVersion must match the value written by scripts/prepare-engine.sh.
@@ -87,7 +86,7 @@ func doExtract() (*Extracted, error) {
 
 	// chmod +x on the tool binaries on unix.
 	if runtime.GOOS != "windows" {
-		for _, name := range []string{"yt-dlp", "ffmpeg", "ffprobe"} {
+		for _, name := range []string{"yt-dlp", "ffmpeg"} {
 			_ = os.Chmod(filepath.Join(binDst, name+exeSuffix()), 0o755)
 		}
 	}
@@ -123,19 +122,17 @@ func buildExtracted(root string) (*Extracted, error) {
 	bin := filepath.Join(root, "engine_bin")
 	ytdlp := filepath.Join(bin, "yt-dlp"+exeSuffix())
 	ffmpeg := filepath.Join(bin, "ffmpeg"+exeSuffix())
-	ffprobe := filepath.Join(bin, "ffprobe"+exeSuffix())
 
-	for _, p := range []string{ytdlp, ffmpeg, ffprobe} {
+	for _, p := range []string{ytdlp, ffmpeg} {
 		if _, err := os.Stat(p); err != nil {
 			return nil, fmt.Errorf("engine: beklenen binary eksik: %s (%w)", p, err)
 		}
 	}
 
 	return &Extracted{
-		Root:    root,
-		YTDLP:   ytdlp,
-		FFMPEG:  ffmpeg,
-		FFPROBE: ffprobe,
+		Root:   root,
+		YTDLP:  ytdlp,
+		FFMPEG: ffmpeg,
 	}, nil
 }
 

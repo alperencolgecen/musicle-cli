@@ -13,9 +13,8 @@ import (
 // <Root>/engine_bin.
 func TestSmokeExtractTools(t *testing.T) {
 	fake := fstest.MapFS{
-		"engine_bin/yt-dlp":      &fstest.MapFile{Data: []byte("#!/bin/sh"), Mode: 0o755},
-		"engine_bin/ffmpeg":      &fstest.MapFile{Data: []byte("# ffmpeg"), Mode: 0o755},
-		"engine_bin/ffprobe":     &fstest.MapFile{Data: []byte("# ffprobe"), Mode: 0o755},
+		"engine_bin/yt-dlp":       &fstest.MapFile{Data: []byte("#!/bin/sh"), Mode: 0o755},
+		"engine_bin/ffmpeg":       &fstest.MapFile{Data: []byte("# ffmpeg"), Mode: 0o755},
 		"engine_bin/.engine-stamp": &fstest.MapFile{Data: []byte("engine-v2\n")},
 	}
 
@@ -24,7 +23,7 @@ func TestSmokeExtractTools(t *testing.T) {
 		t.Fatalf("copyFS(engine_bin): %v", err)
 	}
 
-	want := []string{"yt-dlp", "ffmpeg", "ffprobe", ".engine-stamp"}
+	want := []string{"yt-dlp", "ffmpeg", ".engine-stamp"}
 	for _, name := range want {
 		if _, err := os.Stat(filepath.Join(dst, name)); err != nil {
 			t.Errorf("tool %q not extracted to %s: %v", name, dst, err)

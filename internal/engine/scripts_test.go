@@ -12,7 +12,7 @@ func TestBinEmbedded(t *testing.T) {
 	if _, err := fs.ReadFile(binFS, "engine_bin/.engine-stamp"); err != nil {
 		t.Skipf("tools not embedded in this build: %v", err)
 	}
-	for _, name := range []string{"yt-dlp", "ffmpeg", "ffprobe"} {
+	for _, name := range []string{"yt-dlp", "ffmpeg"} {
 		if _, err := fs.ReadFile(binFS, "engine_bin/"+name); err != nil {
 			t.Errorf("tool %q missing from embed: %v", name, err)
 		}

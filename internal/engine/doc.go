@@ -1,9 +1,9 @@
 // Package engine bundles a fully self-contained download engine (yt-dlp +
-// static ffmpeg/ffprobe) into the musicle-cli binary via go:embed.
+// static ffmpeg) into the musicle-cli binary via go:embed.
 //
-// The flow:
+// It contains the self-contained download pipeline. Build flow:
 //
-//  1. scripts/prepare-engine.sh downloads yt-dlp and a static ffmpeg/ffprobe
+//  1. scripts/prepare-engine.sh downloads yt-dlp and a static ffmpeg
 //     into internal/engine/engine_bin/ (no Python, no venv), then go:embed
 //     bakes them into the binary with -tags engine_assets.
 //

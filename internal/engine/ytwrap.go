@@ -80,6 +80,9 @@ func downloadOne(ext *Extracted, url, outDir string, progress Progress) error {
 		return err
 	}
 	thumbFile := findThumbnail(thumbBase)
+	if thumbFile != "" {
+		thumbFile = ensureCoverFormat(ext.FFMPEG, thumbFile)
+	}
 
 	// 3) ffmpeg: audio -> mp3 320k, attach cover as APIC.
 	outPath := filepath.Join(outDir, name+".mp3")
@@ -222,7 +225,7 @@ func findAudioFile(dir, base string) (string, error) {
 	for _, m := range matches {
 		ext := strings.ToLower(filepath.Ext(m))
 		switch ext {
-		case ".webm", ".m4a", ".opus", ".ogg", ".mp4", ".flac":
+		case ".webm", ".m4a", ".opus", ".ogg", ".mp4", ".flac", ".mp3":
 			return m, nil
 		}
 	}
@@ -238,6 +241,26 @@ func findThumbnail(base string) string {
 	}
 	return ""
 }
+
+// ensureCoverFormat guarantees the cover is a format the mp3 muxer can write as
+// an ID3v2 APIC frame. The mp3 muxer only accepts JPEG/PNG; WebP is rejected.
+// Since YouTube commonly emits .webp thumbnails, we transcode those to JPEG
+// with the bundled ffmpeg. Any other format is returned unchanged.
+func ensureCoverFormat(ffmpeg, thumb string) string {
+	if strings.ToLower(filepath.Ext(thumb)) != ".webp" {
+		return thumb
+	}
+	jpg := strings.TrimSuffix(thumb, filepath.Ext(thumb)) + ".jpg"
+	args := []string{"-y", "-i", thumb, "-frames:v", "1", jpg}
+	if err := runFFMPEG(ffmpeg, args, noopProgress); err != nil {
+		return thumb
+	}
+	return jpg
+}
+
+// noopProgress swallows progress events. Used for background ffmpeg calls that
+// carry no user-facing progress (e.g. cover transcode).
+func noopProgress(int, string) {}
 
 func sanitizeFilename(name string) string {
 	name = strings.Map(func(r rune) rune {

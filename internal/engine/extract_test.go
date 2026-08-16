@@ -36,7 +36,7 @@ func TestExtractSucceedsWhenEmbedded(t *testing.T) {
 	if err != nil {
 		t.Skipf("engine assets not embedded in this build: %v", err)
 	}
-	if ext == nil || ext.YTDLP == "" || ext.FFMPEG == "" || ext.FFPROBE == "" {
+	if ext == nil || ext.YTDLP == "" || ext.FFMPEG == "" {
 		t.Fatal("Extract returned incomplete locations")
 	}
 }

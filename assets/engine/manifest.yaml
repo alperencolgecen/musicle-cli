@@ -4,6 +4,6 @@ Standalone tools bundled into the binary (baked in with -tags engine_assets).
 Used by scripts/prepare-engine.sh to fetch deterministic binaries before the
 Go embed. Bump `version` whenever the bundled tools change.
 
-yt-dlp:  2026.03.17
-ffmpeg:  6.1.1
+yt-dlp:  2026.07.04
+ffmpeg:  7.0.2-static
 version: 2

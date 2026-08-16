@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # prepare-engine.sh — fetch the self-contained download engine for musicle-cli.
 #
-# Downloads a standalone yt-dlp binary plus static ffmpeg/ffprobe into
+# Downloads a standalone yt-dlp binary plus a static ffmpeg into
 # internal/engine/engine_bin/ (no Python, no venv). `go:embed` (see
 # internal/engine/embed_assets.go) then bakes them into the binary when built
 # with -tags engine_assets.
@@ -41,15 +41,14 @@ fetch_ytdlp() {
   echo "    yt-dlp: $("$out" --version 2>/dev/null || echo '?')"
 }
 
-# ---------- ffmpeg + ffprobe (static) ----------
+# ---------- ffmpeg (static, only what's used for MP3 muxing) ----------
 fetch_ffmpeg() {
   local ffmpeg_out="$BIN_DIR/ffmpeg"
-  local ffprobe_out="$BIN_DIR/ffprobe"
-  if [ -x "$ffmpeg_out" ] && [ -x "$ffprobe_out" ]; then
-    echo "==> Reusing existing ffmpeg/ffprobe"
+  if [ -x "$ffmpeg_out" ]; then
+    echo "==> Reusing existing ffmpeg"
     return
   fi
-  echo "==> Downloading static ffmpeg/ffprobe for $OS_TARGET..."
+  echo "==> Downloading static ffmpeg for $OS_TARGET..."
   local TMP
   TMP="$(mktemp -d)"
   case "$OS_TARGET" in
@@ -58,20 +57,16 @@ fetch_ffmpeg() {
       curl -sL "$URL" -o "$TMP/ffmpeg.tar.xz"
       tar -xJf "$TMP/ffmpeg.tar.xz" -C "$TMP"
       cp "$(find "$TMP" -type f -name ffmpeg | head -1)" "$ffmpeg_out"
-      cp "$(find "$TMP" -type f -name ffprobe | head -1)" "$ffprobe_out"
       ;;
     windows)
       URL="https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
       curl -sL "$URL" -o "$TMP/ffmpeg.zip"
       unzip -q "$TMP/ffmpeg.zip" -d "$TMP"
       cp "$(find "$TMP" -type f -iname 'ffmpeg.exe' | head -1)" "$ffmpeg_out"
-      cp "$(find "$TMP" -type f -iname 'ffprobe.exe' | head -1)" "$ffprobe_out"
       ;;
     darwin)
       curl -sL "https://evermeet.cx/ffmpeg/getrelease/zip" -o "$TMP/ffmpeg.zip"
       unzip -q "$TMP/ffmpeg.zip" -d "$BIN_DIR"
-      curl -sL "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o "$TMP/ffprobe.zip"
-      unzip -q "$TMP/ffprobe.zip" -d "$BIN_DIR"
       ;;
     *)
       echo "Unknown OS: $OS_TARGET" >&2
@@ -79,7 +74,7 @@ fetch_ffmpeg() {
       exit 1
       ;;
   esac
-  chmod +x "$ffmpeg_out" "$ffprobe_out"
+  chmod +x "$ffmpeg_out"
   rm -rf "$TMP"
   echo "    ffmpeg: $("$ffmpeg_out" -version 2>/dev/null | head -1 || echo '?')"
 }
@@ -87,7 +82,19 @@ fetch_ffmpeg() {
 fetch_ytdlp
 fetch_ffmpeg
 
-# Stamp the cache version so the Go side can verify freshness.
-echo "engine-version=2" > "$BIN_DIR/.engine-stamp"
+# Compress the embedded binaries when UPX is available. Static ffmpeg packs
+# ~31%, which keeps the final binary small; yt-dlp is already dense and UPX
+# reports no gain, so only ffmpeg is processed. If UPX is missing the build
+# still works, just with a larger binary.
+if command -v upx >/dev/null 2>&1; then
+  echo "==> UPX sıkıştırması (ffmpeg)..."
+  upx -q --best "$BIN_DIR/ffmpeg" 2>/dev/null || echo "    ffmpeg UPX başarısız, atlanıyor"
+else
+  echo "==> upx bulunamadı; ffmpeg sıkıştırılmadan bırakılıyor (daha büyük binary)"
+fi
+
+# Stamp the cache version so the Go side can verify freshness. Must match the
+# cacheVersion constant in internal/engine/extract.go.
+echo "engine-v2" > "$BIN_DIR/.engine-stamp"
 
 echo "==> Done. Embedded engine ready at $BIN_DIR (baked in via -tags engine_assets)."

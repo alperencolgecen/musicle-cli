@@ -1,35 +1,55 @@
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
-	"path/filepath"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
+	"time"
 )
 
-// DownloadSpotify downloads Spotify URLs (track / album / playlist) to mp3
-// (320k) with an embedded cover. yt-dlp resolves the Spotify page and fetches
-// the audio from YouTube, so this reuses the same pipeline as YouTube — no
-// Spotify API or token is involved.
+// DownloadSpotify downloads Spotify tracks without any API credentials. Each
+// track is resolved through Spotify's public embed page (no token) to its
+// artist + title, then downloaded from YouTube via the bundled yt-dlp using a
+// `ytsearch1:` query and muxed to 320k MP3 with an embedded cover — the same
+// pipeline as DownloadYouTube.
+//
+// Playlist / album URLs are not resolved here (embed pages do not expose the
+// full track list without an API); they return an error so the bridge falls
+// back to its legacy API-free collection scraper.
 func DownloadSpotify(opt SpotifyOptions) error {
 	ext, err := Extract()
 	if err != nil {
 		return err
 	}
-	urls := sanitizeSpotifyURLs(opt.URLs)
-	if len(urls) == 0 {
-		return fmt.Errorf("yt-dlp: en az bir Spotify URL veya sorgu gerekli")
+	inputs := sanitizeSpotifyInputs(opt.URLs)
+	if len(inputs) == 0 {
+		return fmt.Errorf("spotify: en az bir URL veya arama sorgusu gerekli")
 	}
-	return downloadWithYTDLP(ext, urls, opt.OutputDir, opt.Progress)
+	for _, in := range inputs {
+		query, err := spotifyQueryFor(in)
+		if err != nil {
+			return err
+		}
+		if err := downloadOne(ext, "ytsearch1:"+query, opt.OutputDir, opt.Progress); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// DownloadSpotifyPlaylist is the public name for playlist / album flows.
-// Kept as a separate entry point so the bridge layer can dispatch on intent.
+// DownloadSpotifyPlaylist is kept as a separate entry point for playlist /
+// album flows. yt-dlp plays lists natively for YouTube, but Spotify
+// collections need the API-free collection scraper on the bridge side, so
+// this reports an error here only when a collection URL slips through.
 func DownloadSpotifyPlaylist(opt SpotifyOptions) error {
 	return DownloadSpotify(opt)
 }
 
-// sanitizeSpotifyURLs trims whitespace and drops empty entries.
-func sanitizeSpotifyURLs(in []string) []string {
+func sanitizeSpotifyInputs(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, raw := range in {
 		u := strings.TrimSpace(raw)
@@ -41,11 +61,109 @@ func sanitizeSpotifyURLs(in []string) []string {
 	return out
 }
 
-// scriptPathEnv is retained only to avoid breaking callers that referenced it;
-// the new engine has no Python helpers, so it simply returns the cache root.
-func scriptPathEnv() string {
-	if extracted == nil {
-		return "engine_bin"
+// spotifyEmbedRe matches the [type]/[id] tail of a Spotify URL, and the
+// spotify:type:id form.
+var spotifyEmbedRe = regexp.MustCompile(`(?:open\.spotify\.com/|spotify:)(track|album|playlist)(?:/|:)([A-Za-z0-9]+)`)
+
+// spotifyQueryFor turns a Spotify track URL into a YouTube search query, or a
+// plain non-Spotify string into itself (so raw "artist - title" searches are
+// supported too).
+func spotifyQueryFor(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.Contains(trimmed, "spotify.") && !strings.HasPrefix(trimmed, "spotify:") {
+		if trimmed == "" {
+			return "", fmt.Errorf("spotify: boş sorgu")
+		}
+		return trimmed, nil
 	}
-	return filepath.Join(extracted.Root, "engine_bin")
+
+	m := spotifyEmbedRe.FindStringSubmatch(trimmed)
+	if m == nil {
+		return "", fmt.Errorf("spotify: desteklenmeyen URL formatı: %s", trimmed)
+	}
+	ent, id := m[1], m[2]
+	if ent != "track" {
+		return "", fmt.Errorf("spotify: %s sayfası bu sürümde scrape ile desteklenmiyor; bridge toplayıcısına geçiliyor", ent)
+	}
+
+	name, artist, err := scrapeSpotifyTrack(id)
+	if err != nil {
+		return "", err
+	}
+	if artist != "" {
+		return artist + " - " + name, nil
+	}
+	return name, nil
+}
+
+type spotifyEmbedEntity struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Artists []struct {
+		Name string `json:"name"`
+	} `json:"artists"`
+}
+
+type spotifyEmbedState struct {
+	Props *struct {
+		PageProps *struct {
+			State *struct {
+				Data *struct {
+					Entity *spotifyEmbedEntity `json:"entity"`
+				} `json:"data"`
+			} `json:"state"`
+		} `json:"pageProps"`
+	} `json:"props"`
+}
+
+var nextDataRe = regexp.MustCompile(`<script[^>]*id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>`)
+
+// scrapeSpotifyTrack fetches a track's artist + title from Spotify's public
+// embed page. No API key, no credentials — exactly like a browser requesting
+// the same widget a user embeds on a web page.
+func scrapeSpotifyTrack(id string) (name, artist string, err error) {
+	pageURL := "https://open.spotify.com/embed/track/" + url.PathEscape(id)
+
+	req, err := http.NewRequest(http.MethodGet, pageURL, nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("spotify: sayfa alınamadı: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("spotify: HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return "", "", err
+	}
+
+	if m := nextDataRe.FindSubmatch(body); m != nil {
+		var st spotifyEmbedState
+		if json.Unmarshal(m[1], &st) == nil {
+			if e := st.Props.PageProps.State.Data.Entity; e != nil && e.Name != "" {
+				if len(e.Artists) > 0 {
+					artist = e.Artists[0].Name
+				}
+				return unescapeHTML(e.Name), unescapeHTML(artist), nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("spotify: parça metadata'sı çıkarılamadı (%s)", id)
+}
+
+func unescapeHTML(s string) string {
+	s = strings.ReplaceAll(s, "&amp;", "&")
+	s = strings.ReplaceAll(s, "&lt;", "<")
+	s = strings.ReplaceAll(s, "&gt;", ">")
+	s = strings.ReplaceAll(s, "&quot;", "\"")
+	s = strings.ReplaceAll(s, "&#39;", "'")
+	return s
 }
