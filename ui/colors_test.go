@@ -6,15 +6,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Terminal arka planı (uygulamanın kendi penceresi) saf siyah olmalı; böylece
-// 3 işletim sisteminde de kullanıcının terminal temasından bağımsız olarak
-// uygulama siyah arka planla açılır.
-func TestColorBackgroundIsBlack(t *testing.T) {
-	if ColorBackground != lipgloss.Color("#000000") {
-		t.Fatalf("ColorBackground = %q, beklenen #000000", ColorBackground)
-	}
+// Uygulama artık arka planı zorlamaz; terminalin kendi teması kullanılır.
+// AppStyle, tüm ekranı siyaha boyayan bir zemin özelliğine sahip olmamalı.
+func TestAppStyleDoesNotForceBackground(t *testing.T) {
 	InitStyles()
-	if got := AppStyle.GetBackground(); got != lipgloss.Color("#000000") {
-		t.Fatalf("AppStyle arka planı = %v, beklenen #000000", got)
+	empty := lipgloss.NoColor{}
+	if got := AppStyle.GetBackground(); got != empty {
+		t.Fatalf("AppStyle arka planı = %v, beklenen boş (terminal teması)", got)
 	}
 }

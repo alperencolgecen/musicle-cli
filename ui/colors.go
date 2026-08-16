@@ -70,8 +70,7 @@ var (
 
 // InitStyles builds all styles with the current ColorAccent
 func InitStyles() {
-	AppStyle = lipgloss.NewStyle().
-		Background(ColorBackground)
+	AppStyle = lipgloss.NewStyle()
 
 	AccentStyle = lipgloss.NewStyle().Foreground(ColorAccent)
 	WhiteStyle = lipgloss.NewStyle().Foreground(ColorPrimary)
@@ -81,7 +80,6 @@ func InitStyles() {
 	BoldStyle = lipgloss.NewStyle().Bold(true)
 
 	HeaderStyle = lipgloss.NewStyle().
-		Background(ColorBackground).
 		Foreground(ColorPrimary).
 		Bold(true)
 
@@ -102,12 +100,10 @@ func InitStyles() {
 		BorderForeground(ColorAccent)
 
 	InputStyle = lipgloss.NewStyle().
-		Background(ColorSurface).
 		Foreground(ColorPrimary).
 		Padding(0, 1)
 
 	FocusedInputStyle = lipgloss.NewStyle().
-		Background(ColorSurface).
 		Foreground(ColorPrimary).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(ColorAccent).
@@ -125,15 +121,13 @@ func InitStyles() {
 		Padding(0, 2)
 
 	NavInactiveStyle = lipgloss.NewStyle().
-		Background(lipgloss.Color("#282828")).
 		Foreground(ColorPrimary).
 		Padding(0, 2)
 
 	ButtonStyle = lipgloss.NewStyle().
-		Background(lipgloss.Color("#282828")).
 		Foreground(ColorAccent).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("#282828")).
+		BorderForeground(ColorBorder).
 		Padding(0, 2)
 
 	AccentButtonStyle = lipgloss.NewStyle().
@@ -161,7 +155,6 @@ func InitStyles() {
 		Padding(0, 2)
 
 	FocusedOutlineStyle = lipgloss.NewStyle().
-		Background(lipgloss.Color("#282828")).
 		Foreground(ColorAccent).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorPrimary).
@@ -177,7 +170,6 @@ func InitStyles() {
 		Render(strings.Repeat("-", 40))
 
 	SurfaceStyle = lipgloss.NewStyle().
-		Background(ColorSurface).
 		Padding(0, 1)
 
 	FaintStyle = lipgloss.NewStyle().
