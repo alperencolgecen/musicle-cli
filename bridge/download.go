@@ -115,13 +115,17 @@ func runEngine(url, outputDir string) (*Result, bool) {
 
 	// Tek dosya → tek sonuç; çok dosya (çalma listesi) → şarkı listesi.
 	if len(files) == 1 {
+		res := resultFromFile(files[0])
+		registerSong(outputDir, files[0], res)
 		CurrentDownload.Set(false, 100, fmt.Sprintf("Motor ile tamamlandı: %s", filepath.Base(files[0])))
-		return resultFromFile(files[0]), true
+		return res, true
 	}
 
 	songs := make([]Result, 0, len(files))
 	for _, f := range files {
-		songs = append(songs, *resultFromFile(f))
+		res := resultFromFile(f)
+		registerSong(outputDir, f, res)
+		songs = append(songs, *res)
 	}
 	CurrentDownload.Set(false, 100, fmt.Sprintf("Motor ile %d şarkı indirildi", len(songs)))
 	return &Result{
@@ -129,6 +133,30 @@ func runEngine(url, outputDir string) (*Result, bool) {
 		Message: fmt.Sprintf("%d şarkı indirildi", len(songs)),
 		Songs:   songs,
 	}, true
+}
+
+// registerSong appends an engine-produced audio file to the playlist's
+// song_list.txt so it shows up in the song list. Files already listed are
+// skipped to avoid duplicate entries on re-downloads.
+func registerSong(outputDir, filePath string, meta *Result) {
+	base := filepath.Base(filePath)
+	listPath := filepath.Join(outputDir, "song_list.txt")
+	if existing, err := state.ReadSongs(listPath); err == nil {
+		for _, s := range existing {
+			if s.Filename == base {
+				return
+			}
+		}
+	}
+	title := meta.Title
+	if title == "" {
+		title = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+	artist := meta.Artist
+	if artist == "" {
+		artist = "Unknown"
+	}
+	_ = state.AppendSong(listPath, base, title, artist, fmtDuration(meta.Duration))
 }
 
 // engineProgress forwards the engine's progress events to the shared UI state.

@@ -11,7 +11,6 @@ import (
 	"MusicLeCLI/bridge"
 	"MusicLeCLI/components"
 	"MusicLeCLI/state"
-	"MusicLeCLI/ui"
 )
 
 type StartDownloadMsg struct {
@@ -334,6 +333,9 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DownloadResultMsg:
 		if m.downloads != nil {
 			m.downloads.handleDownloadResult(msg)
+		}
+		if m.home != nil {
+			m.home.refreshAllContent()
 		}
 
 	case LocalFileImportMsg:

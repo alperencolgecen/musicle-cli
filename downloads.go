@@ -446,26 +446,45 @@ func (m *DownloadsModel) currentInput() *textinput.Model {
 	return nil
 }
 
-// TrackProgress logs download progress to console.
+// TrackProgress logs download progress to console. To avoid flooding the
+// console with per-percent lines, only the start (active, 0%), completion
+// (!active, >=100%) and error/status-marker transitions are logged.
 func (m *DownloadsModel) TrackProgress(active bool, pct float64, status string) {
 	if status == "" {
 		return
 	}
 	intPct := int(pct)
-	if intPct == m.lastLoggedPct && active {
+	isBad := active &&
+		(strings.Contains(strings.ToLower(status), "error") ||
+			strings.Contains(strings.ToLower(status), "fail"))
+	finished := !active || intPct >= 100
+
+	// Log the first message once (0 + active) and the final line once.
+	if finished {
+		level := "ok"
+		if strings.Contains(strings.ToLower(status), "error") || strings.Contains(strings.ToLower(status), "fail") {
+			level = "error"
+		} else if status == "Done" || status == "Saved" || strings.HasPrefix(status, "Motor") {
+			level = "ok"
+		}
+		m.lastLoggedPct = -1
+		msg := strings.Trim(strings.TrimPrefix(status, "Motor ile "), " ")
+		if msg == "" {
+			msg = "Download complete"
+		}
+		m.addLog(level, msg)
 		return
 	}
-	m.lastLoggedPct = intPct
-	if !active {
-		m.lastLoggedPct = -1
+	if intPct == 0 && m.lastLoggedPct != 0 {
+		m.lastLoggedPct = 0
+		m.addLog("info", "İndiriliyor...")
+		return
 	}
-	level := "info"
-	if strings.Contains(strings.ToLower(status), "error") || strings.Contains(strings.ToLower(status), "fail") {
-		level = "error"
-	} else if !active {
-		level = "ok"
+	if isBad && intPct != m.lastLoggedPct {
+		m.lastLoggedPct = intPct
+		m.addLog("error", fmt.Sprintf("[%d%%] %s", intPct, status))
+		return
 	}
-	m.addLog(level, fmt.Sprintf("[%d%%] %s", intPct, status))
 }
 
 // startPlaylistDownload starts downloading a playlist URL.
@@ -496,11 +515,10 @@ func (m *DownloadsModel) startPlaylistDownload() tea.Cmd {
 	m.downloadStatus = "0%"
 	m.downloadedTracks = 0
 	m.failedTracks = 0
-	m.addLog("info", fmt.Sprintf("Starting playlist download: %s", url))
+	m.addLog("info", "İndiriliyor...")
 
 	// Detect if it's a Spotify or YouTube playlist URL
 	action := detectDownloadProvider(url)
-	m.addLog("info", fmt.Sprintf("Detected provider: %s", action))
 
 	return func() tea.Msg {
 		return StartDownloadMsg{Action: action, URL: url, Output: outDir}
@@ -542,7 +560,6 @@ func (m *DownloadsModel) startDownload() tea.Cmd {
 		return nil
 	}
 	url := strings.TrimSpace(m.musicInput.Value())
-	m.addLog("info", fmt.Sprintf("Raw input value: %q", url))
 	if url == "" {
 		m.addLog("error", Tr("dl.enter_url"))
 		return nil
@@ -571,7 +588,6 @@ func (m *DownloadsModel) startDownload() tea.Cmd {
 	}
 
 	action := detectDownloadProvider(url)
-	m.addLog("info", fmt.Sprintf("Detected provider: %s", action))
 
 	m.isDownloading = true
 	m.downloadStart = time.Now()
@@ -580,7 +596,7 @@ func (m *DownloadsModel) startDownload() tea.Cmd {
 	m.downloadedTracks = 0
 	m.failedTracks = 0
 	m.lastLoggedPct = -1
-	m.addLog("info", fmt.Sprintf("Sending: action=%s url=%s output=%s", action, url, outDir))
+	m.addLog("info", "İndiriliyor...")
 	return func() tea.Msg {
 		return StartDownloadMsg{Action: action, URL: url, Output: outDir}
 	}
@@ -590,12 +606,10 @@ func (m *DownloadsModel) handleDownloadResult(msg DownloadResultMsg) {
 	m.isDownloading = false
 	elapsed := time.Since(m.downloadStart).Truncate(time.Second)
 
-	m.addLog("info", fmt.Sprintf("Download result received (action=%s, elapsed=%v)", msg.Action, elapsed))
-
 	if msg.Error != nil {
 		m.failedTracks++
 		m.downloadHistory = append(m.downloadHistory, downloadHistoryItem{title: "error", status: "error", time: time.Now()})
-		m.addLog("error", fmt.Sprintf("Bridge error: %+v", msg.Error))
+		m.addLog("error", fmt.Sprintf("%v (%ds)", msg.Error, elapsed))
 		return
 	}
 	if msg.Result == nil {
@@ -604,7 +618,6 @@ func (m *DownloadsModel) handleDownloadResult(msg DownloadResultMsg) {
 		m.addLog("error", "Result is nil (no response from bridge)")
 		return
 	}
-	m.addLog("info", fmt.Sprintf("Result: status=%s message=%q error=%q", msg.Result.Status, msg.Result.Message, msg.Result.Error))
 
 	if msg.Result.Status == "error" {
 		m.failedTracks++
@@ -619,7 +632,7 @@ func (m *DownloadsModel) handleDownloadResult(msg DownloadResultMsg) {
 	}
 	m.downloadedTracks++
 	m.downloadHistory = append(m.downloadHistory, downloadHistoryItem{title: msgText, status: "ok", time: time.Now()})
-	m.addLog("ok", msgText)
+	m.addLog("ok", fmt.Sprintf("%s (%ds)", msgText, elapsed))
 }
 
 func (m *DownloadsModel) HandleCtrlC() {

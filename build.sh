@@ -17,7 +17,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 prepare_engine() {
   local os="$1"
   echo "==> Gömülü motor hazırlanıyor ($os)..."
-  if ./"$ROOT/scripts/prepare-engine.sh" "$os"; then
+  if "$ROOT/scripts/prepare-engine.sh" "$os"; then
     echo "==> Motor hazır."
   else
     echo "WARNING: motor hazırlanamadı; build -tags engine_assets başarısız olabilir."
