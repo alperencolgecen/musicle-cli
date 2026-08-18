@@ -57,6 +57,9 @@ type ConnectResultMsg struct {
 	Err       error
 }
 
+// connectDoneMsg returns the UI to the home screen after a successful import.
+type connectDoneMsg struct{}
+
 type ViewType int
 
 const (
@@ -377,6 +380,14 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ConnectResultMsg:
 		if m.connect != nil {
 			m.connect.finishScan(msg.Playlists, msg.Err)
+		}
+		return m, nil
+
+	case connectDoneMsg:
+		m.view = ViewHome
+		m.activeNav = "home"
+		if m.home != nil {
+			m.home.refreshAllContent()
 		}
 		return m, nil
 	}

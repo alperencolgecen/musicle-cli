@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"MusicLeCLI/bridge"
 	"MusicLeCLI/internal/browser"
+	"MusicLeCLI/state"
 	"MusicLeCLI/ui"
 )
 
@@ -32,6 +35,8 @@ type ConnectModel struct {
 
 	plFocus   int
 	confirmed map[int]bool
+	saved     bool
+	saveErr   error
 }
 
 func NewConnectModel() *ConnectModel {
@@ -59,9 +64,19 @@ func (m *ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "enter", " ":
-				m.toggleConfirm(m.plFocus)
+				if !m.confirmed[m.plFocus] {
+					if err := m.confirm(m.plFocus); err != nil {
+						m.saveErr = err
+					}
+				}
+				if m.saved {
+					return m, func() tea.Msg { return connectDoneMsg{} }
+				}
 				return m, nil
 			case "esc":
+				if m.saved {
+					return m, func() tea.Msg { return connectDoneMsg{} }
+				}
 				m.scanDone = false
 				m.playlists = nil
 				m.plFocus = 0
@@ -92,22 +107,105 @@ func (m *ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// toggleConfirm marks the playlist at index i as confirmed and advances focus
-// to the next unconfirmed entry so Enter can confirm sequentially.
-func (m *ConnectModel) toggleConfirm(i int) {
+// confirm saves the playlist at index i: it derives an auto-named profile for
+// the chosen platform and imports the tracks via bridge.ImportFromBrowser.
+func (m *ConnectModel) confirm(i int) error {
 	if m.confirmed == nil {
 		m.confirmed = map[int]bool{}
 	}
 	if m.confirmed[i] {
-		return
+		return nil
 	}
-	m.confirmed[i] = true
-	for j := m.plFocus + 1; j < len(m.playlists); j++ {
-		if !m.confirmed[j] {
-			m.plFocus = j
-			return
+	pl := m.playlists[i]
+	displayName, folderName := nextProfileName(m.chosen)
+	if err := state.Current.CreateProfileStructure(folderName, displayName, "", "", state.Current.Language); err != nil {
+		return err
+	}
+	plFolder := uniqueFolder(slugify(pl.Name), folderName)
+	if err := bridge.ImportFromBrowser(folderName, plFolder, pl.Name, pl.Tracks); err != nil {
+		return err
+	}
+	if err := state.Current.ScanProfiles(); err != nil {
+		return err
+	}
+	for idx := range state.Current.Profiles {
+		if state.Current.Profiles[idx].FolderName == folderName {
+			state.Current.CurrentProfile = &state.Current.Profiles[idx]
+			if len(state.Current.CurrentProfile.Playlists) > 0 {
+				state.Current.CurrentPlaylist = &state.Current.CurrentProfile.Playlists[0]
+			}
+			break
 		}
 	}
+	m.confirmed[i] = true
+	m.saved = true
+	return nil
+}
+
+// nextProfileName derives the auto profile name/ folder for a platform:
+// first "Spotify Profili" / "YouTube Profili", then "... 2", "... 3", …
+func nextProfileName(platform browser.Platform) (string, string) {
+	prefix := "Spotify Profili"
+	if platform == browser.PlatformYouTube {
+		prefix = "YouTube Profili"
+	}
+	n := 0
+	for _, p := range state.Current.Profiles {
+		if strings.HasPrefix(p.DisplayName, prefix) {
+			n++
+		}
+	}
+	displayName := prefix
+	if n > 0 {
+		displayName = fmt.Sprintf("%s %d", prefix, n+1)
+	}
+	folder := slugify(displayName)
+	base := folder
+	i := 2
+	for {
+		if _, err := os.Stat(state.Current.ProfilesDir()); os.IsNotExist(err) {
+			break
+		}
+		if _, err := os.Stat(filepath.Join(state.Current.ProfilesDir(), folder)); os.IsNotExist(err) {
+			break
+		}
+		folder = fmt.Sprintf("%s_%d", base, i)
+		i++
+	}
+	return displayName, folder
+}
+
+// uniqueFolder returns a playlist folder name that does not yet exist under the
+// given profile directory.
+func uniqueFolder(name, profileFolder string) string {
+	base := name
+	i := 2
+	for {
+		if _, err := os.Stat(state.Current.PlaylistDir(profileFolder, name)); os.IsNotExist(err) {
+			break
+		}
+		name = fmt.Sprintf("%s_%d", base, i)
+		i++
+	}
+	return name
+}
+
+// slugify converts a display name into a filesystem-safe folder name.
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		if r == ' ' || r == '-' {
+			return '_'
+		}
+		return -1
+	}, s)
+	if s == "" {
+		s = "playlist"
+	}
+	return s
 }
 
 // finishScan stores the result of a browser scan and dismisses the modal.
@@ -223,8 +321,19 @@ func (m *ConnectModel) renderPlaylistList() string {
 	}
 
 	body := strings.Join(rows, "\n")
-	footer := lipgloss.NewStyle().Foreground(ui.ColorSecondary).
-		Render("↑/↓ ile gezin  •  Enter ile onayla  •  Esc ile geri")
+
+	var footer string
+	switch {
+	case m.saveErr != nil:
+		footer = lipgloss.NewStyle().Foreground(ui.ColorError).
+			Render(fmt.Sprintf("Kayıt hatası: %v", m.saveErr))
+	case m.saved:
+		footer = lipgloss.NewStyle().Foreground(ui.ColorSuccess).
+			Render("Kaydedildi ✓  •  Enter/Esc ile ana ekrana dön")
+	default:
+		footer = lipgloss.NewStyle().Foreground(ui.ColorSecondary).
+			Render("↑/↓ ile gezin  •  Enter ile onayla  •  Esc ile geri")
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Center, header, "", body, "", footer)
 }

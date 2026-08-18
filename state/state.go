@@ -323,18 +323,22 @@ func parseSongList(listPath, plDir string) []Song {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 5)
-		if len(parts) != 5 {
+		parts := strings.SplitN(line, "|", 6)
+		if len(parts) < 5 {
 			continue
 		}
-		songs = append(songs, Song{
+		s := Song{
 			Filename:  parts[0],
 			Title:     parts[1],
 			Artist:    parts[2],
 			DateAdded: parts[3],
 			Duration:  normalizeDuration(parts[4]),
 			FilePath:  filepath.Join(plDir, parts[0]),
-		})
+		}
+		if len(parts) == 6 {
+			s.Source = parts[5]
+		}
+		songs = append(songs, s)
 	}
 	return songs
 }
