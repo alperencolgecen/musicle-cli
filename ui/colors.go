@@ -40,9 +40,10 @@ var (
 	ColorYouTube      = lipgloss.Color("#FF0000") // YouTube red
 	ColorYouTubeFocus = lipgloss.Color("#FF3131") // phosphor red (focused)
 	// Lighter variants used for the home sidebar connect cards so the brand
-	// colors read clearly against the dark surface.
-	ColorSpotifyLight = lipgloss.Color("#5BE37A")
-	ColorYouTubeLight = lipgloss.Color("#FF6B6B")
+	// colors read clearly against the dark surface. Kept vivid (not washed out)
+	// so the cards stay legible and punchy.
+	ColorSpotifyLight = lipgloss.Color("#1ED760")
+	ColorYouTubeLight = lipgloss.Color("#FF2D2D")
 )
 
 // Styles are mutable — call ApplyTheme() to rebuild

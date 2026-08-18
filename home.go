@@ -1325,23 +1325,24 @@ func (m *HomeModel) renderHomeConnectCards(w, h int) string {
 	if cardW < 12 {
 		cardW = 12
 	}
-	cardH := h - 2
+	cardH := (h - 2) / 3
 	if cardH < 5 {
 		cardH = 5
 	}
-	spot := m.renderHomeCard("Spotify", "assets/Spotify_logo.png",
+	spot := m.renderHomeCard("Spotify",
 		ui.ColorSpotifyLight, ui.ColorSpotifyFocus, m.connectFocus == 0 && m.sidebarFocus == 1, cardW, cardH)
-	yt := m.renderHomeCard("YouTube Music", "assets/Youtube_logo.png",
+	yt := m.renderHomeCard("YouTube Music",
 		ui.ColorYouTubeLight, ui.ColorYouTubeFocus, m.connectFocus == 1 && m.sidebarFocus == 1, cardW, cardH)
 	return lipgloss.JoinHorizontal(lipgloss.Top, spot, " ", yt)
 }
 
-func (m *HomeModel) renderHomeCard(name, logoPath string, base, focus lipgloss.Color, focused bool, w, h int) string {
+func (m *HomeModel) renderHomeCard(name string, base, focus lipgloss.Color, focused bool, w, h int) string {
+	// On focus the border and label adopt the active theme color.
 	border := base
 	labelColor := base
 	if focused {
-		border = focus
-		labelColor = focus
+		border = ui.ColorAccent
+		labelColor = ui.ColorAccent
 	}
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -1352,19 +1353,8 @@ func (m *HomeModel) renderHomeCard(name, logoPath string, base, focus lipgloss.C
 	if focused {
 		style = style.Bold(true)
 	}
-	// Fill the card with the brand logo (braille art), name beneath it.
-	logoRows := h - 3
-	if logoRows < 2 {
-		logoRows = 2
-	}
-	logoCols := w - 2
-	if logoCols < 4 {
-		logoCols = 4
-	}
-	logo := renderPNGLogo(logoPath, logoCols, logoRows)
 	label := lipgloss.NewStyle().Foreground(labelColor).Bold(true).Render(name)
-	content := lipgloss.JoinVertical(lipgloss.Center, logo, label)
-	return style.Render(content)
+	return style.Render(label)
 }
 
 func (m *HomeModel) launchConnectFromHome() (tea.Model, tea.Cmd) {

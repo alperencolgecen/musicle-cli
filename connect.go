@@ -1,78 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"image"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 
 	"MusicLeCLI/bridge"
 	"MusicLeCLI/internal/browser"
 	"MusicLeCLI/state"
 	"MusicLeCLI/ui"
 )
-
-// logoColorSeq returns an ANSI SGR sequence for the given RGB color, adapted to
-// the terminal's active color profile (truecolor / 256 / 16). This mirrors how
-// lipgloss renders its own colors and avoids emitting raw 24-bit escapes that
-// terminals without truecolor support would drop (leaving blank cells).
-func logoColorSeq(r, g, b uint32, fg bool) string {
-	rf, gf, bf := byte(r>>8), byte(g>>8), byte(b>>8)
-	prefix := "\033[38"
-	if !fg {
-		prefix = "\033[48"
-	}
-	switch lipgloss.ColorProfile() {
-	case termenv.TrueColor:
-		return fmt.Sprintf("%s;2;%d;%d;%dm", prefix, rf, gf, bf)
-	case termenv.ANSI256:
-		return fmt.Sprintf("%s;5;%dm", prefix, rgbTo256(rf, gf, bf))
-	default: // ANSI (16) or Ascii
-		if lipgloss.ColorProfile() == termenv.Ascii {
-			return ""
-		}
-		return fmt.Sprintf("%s;5;%dm", prefix, rgbTo16(rf, gf, bf))
-	}
-}
-
-// ansi16RGB is the standard 16-color palette (indices 0-15).
-var ansi16RGB = [16][3]byte{
-	{0, 0, 0}, {128, 0, 0}, {0, 128, 0}, {128, 128, 0},
-	{0, 0, 128}, {128, 0, 128}, {0, 128, 128}, {192, 192, 192},
-	{128, 128, 128}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
-	{0, 0, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255},
-}
-
-func rgbTo16(r, g, b byte) int {
-	best, bestD := 0, int(^uint(0)>>1)
-	for i, c := range ansi16RGB {
-		d := int(r-c[0])*int(r-c[0]) + int(g-c[1])*int(g-c[1]) + int(b-c[2])*int(b-c[2])
-		if d < bestD {
-			bestD, best = d, i
-		}
-	}
-	return best
-}
-
-func rgbTo256(r, g, b byte) int {
-	if r == g && g == b {
-		if r < 8 {
-			return 16
-		}
-		if r > 248 {
-			return 231
-		}
-		return 232 + int((int(r)-8)*23/240)
-	}
-	lvl := func(v byte) int { return int(int(v) * 5 / 255) }
-	return 16 + 36*lvl(r) + 6*lvl(g) + lvl(b)
-}
 
 // ConnectModel is the platform-selection screen of the browser connector.
 // It shows two brand-colored cards (Spotify / YouTube Music) between which the
@@ -106,6 +47,16 @@ func (m *ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
 		switch {
 		case m.scanning:
+			return m, nil
+
+		case m.scanDone && m.scanErr != nil:
+			switch k.String() {
+			case "esc", "enter", " ":
+				m.scanning = false
+				m.scanDone = false
+				m.scanErr = nil
+				return m, nil
+			}
 			return m, nil
 
 		case m.scanDone && m.scanErr == nil:
@@ -240,16 +191,24 @@ func (m *ConnectModel) View() string {
 		return ""
 	}
 
+	// The cards (base) stay visible behind the modal so the screen is never a
+	// flat black void — the error/loading dialog is overlaid on top of them.
 	if m.scanning {
-		return m.renderModal()
+		return placeOverlay(m.renderBase(), m.renderModal(), m.width)
 	}
 	if m.scanDone {
 		if m.scanErr != nil {
-			return m.renderErrorModal(m.scanErr)
+			return placeOverlay(m.renderBase(), m.renderErrorModal(m.scanErr), m.width)
 		}
 		return m.renderPlaylistList()
 	}
 
+	return m.renderBase()
+}
+
+// renderBase draws the platform selection cards, filling the whole screen so a
+// modal can be overlaid centered on top of it.
+func (m *ConnectModel) renderBase() string {
 	title := lipgloss.NewStyle().Foreground(ui.ColorPrimary).Bold(true).
 		Render("Tarayıcı Bağlayıcı — bir platform seçin   •   F1 ile geçiş   •   Enter ile onayla")
 
@@ -257,37 +216,51 @@ func (m *ConnectModel) View() string {
 	if cardW < 24 {
 		cardW = 24
 	}
-	cardH := m.height - 8
-	if cardH < 14 {
-		cardH = 14
+	cardH := (m.height - 16) / 3
+	if cardH < 8 {
+		cardH = 8
 	}
 
-	spotify := m.renderCard("Spotify", "assets/Spotify_logo.png", ui.ColorSpotify, ui.ColorSpotifyFocus, m.focus == 0, cardW, cardH)
-	yt := m.renderCard("YouTube Music", "assets/Youtube_logo.png", ui.ColorYouTube, ui.ColorYouTubeFocus, m.focus == 1, cardW, cardH)
+	spotify := m.renderCard("Spotify", ui.ColorSpotify, ui.ColorSpotifyFocus, m.focus == 0, cardW, cardH)
+	yt := m.renderCard("YouTube Music", ui.ColorYouTube, ui.ColorYouTubeFocus, m.focus == 1, cardW, cardH)
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, spotify, "    ", yt)
 
 	footer := lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render(
 		"Spotify veya YouTube Music sekmesini tarayıcıda açık tutun.")
 
-	return lipgloss.JoinVertical(lipgloss.Center, title, "", row, "", footer)
+	content := lipgloss.JoinVertical(lipgloss.Center, title, "", row, "", footer)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
 // renderErrorModal shows a scan failure as a small, dismissible modal (Esc).
 func (m *ConnectModel) renderErrorModal(err error) string {
+	innerW := 56
+	// Small close square in the top-right corner: theme-colored background with
+	// a black X mark.
+	closeBtn := lipgloss.NewStyle().
+		Background(ui.ColorAccent).
+		Foreground(ui.ColorBlack).
+		Bold(true).
+		Padding(0, 1).
+		Render("✕")
+	header := lipgloss.PlaceHorizontal(innerW, lipgloss.Right, closeBtn)
+
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.ColorError).
 		Padding(1, 4).
 		Align(lipgloss.Center)
 	content := lipgloss.JoinVertical(lipgloss.Center,
+		header,
+		"",
 		lipgloss.NewStyle().Foreground(ui.ColorError).Bold(true).Render("Bağlantı hatası"),
 		"",
-		lipgloss.NewStyle().Foreground(ui.ColorSecondary).Width(60).Align(lipgloss.Center).Render(err.Error()),
+		lipgloss.NewStyle().Foreground(ui.ColorSecondary).Width(innerW).Align(lipgloss.Center).Render(err.Error()),
 		"",
 		lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render("Esc ile kapat"),
 	)
-	return lipgloss.PlaceVertical(m.height, lipgloss.Center, box.Render(content))
+	return box.Render(content)
 }
 
 // renderModal shows the "reading browser info" loader while scanning.
@@ -304,8 +277,7 @@ func (m *ConnectModel) renderModal() string {
 		"",
 		lipgloss.NewStyle().Foreground(ui.ColorAccent).Render(spin+" "+string(m.chosen)+" taranıyor..."),
 	)
-	modal := box.Render(content)
-	return lipgloss.PlaceVertical(m.height, lipgloss.Center, modal)
+	return box.Render(content)
 }
 
 // renderPlaylistList shows the discovered playlists, each with an "Onayla"
@@ -359,10 +331,13 @@ func (m *ConnectModel) renderPlaylistList() string {
 	return lipgloss.JoinVertical(lipgloss.Center, header, "", body, "", footer)
 }
 
-func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Color, focused bool, w, h int) string {
+func (m *ConnectModel) renderCard(name string, base, focus lipgloss.Color, focused bool, w, h int) string {
+	// Border + label adopt the active theme color when the card is focused.
 	border := base
+	labelColor := base
 	if focused {
-		border = focus
+		border = ui.ColorAccent
+		labelColor = ui.ColorAccent
 	}
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -373,115 +348,6 @@ func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Co
 	if focused {
 		style = style.Bold(true)
 	}
-
-	logo := renderPNGLogo(logoPath, w-8, h-8)
-	labelColor := base
-	if focused {
-		labelColor = focus
-	}
 	label := lipgloss.NewStyle().Foreground(labelColor).Bold(true).Render(name)
-	content := lipgloss.JoinVertical(lipgloss.Center, logo, "", label)
-	return style.Render(content)
-}
-
-// renderPNGLogo renders a PNG as half-block ANSI art to fit within cols x rows,
-// reusing the package-level scaleImage helper used for playlist art.
-// brailleDot returns the 8-dot braille bit for a sub-pixel at cell offset
-// (bx,by) in a 2x4 (wide x tall) block. Cell arrangement:
-//
-//	(0,0)=1 (1,0)=4
-//	(0,1)=2 (1,1)=5
-//	(0,2)=3 (1,2)=6
-//	(0,3)=7 (1,3)=8
-func brailleDot(bx, by int) uint16 {
-	order := [2][4]int{{1, 2, 3, 7}, {4, 5, 6, 8}}
-	return 1 << uint(order[bx][by]-1)
-}
-
-// renderPNGLogo renders the brand logo as colored braille art. Each terminal
-// cell becomes a 2x4 sub-pixel block (braille), which keeps an ~square aspect
-// and yields a detailed, recognizable image on ANY terminal (no graphics
-// protocol required). The logo is scaled preserving its aspect ratio and
-// centered within the cols x rows cell grid; each cell's foreground color is
-// the average of its non-transparent sub-pixels, adapted to the terminal's
-// color profile by logoColorSeq.
-func renderPNGLogo(path string, cols, rows int) string {
-	if cols < 2 || rows < 2 {
-		return ""
-	}
-	data, err := logoFS.ReadFile(path)
-	if err != nil {
-		// Fallback to the filesystem (e.g. when running from the repo root).
-		data, err = os.ReadFile(path)
-		if err != nil {
-			return ""
-		}
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return ""
-	}
-	b := img.Bounds()
-	iw, ih := b.Dx(), b.Dy()
-	if iw <= 0 || ih <= 0 {
-		return ""
-	}
-	// Sub-pixel grid: braille cells are 2 wide x 4 tall and render ~square.
-	gridW := cols * 2
-	gridH := rows * 4
-	imgAspect := float64(iw) / float64(ih)
-	var drawW, drawH int
-	if float64(gridW)/float64(gridH) > imgAspect {
-		drawH = gridH
-		drawW = int(float64(drawH) * imgAspect)
-	} else {
-		drawW = gridW
-		drawH = int(float64(drawW) / imgAspect)
-	}
-	if drawW < 1 {
-		drawW = 1
-	}
-	if drawH < 1 {
-		drawH = 1
-	}
-	scaled := scaleImage(img, drawW, drawH)
-	offX := (gridW - drawW) / 2
-	offY := (gridH - drawH) / 2
-
-	var out strings.Builder
-	for cy := 0; cy < rows; cy++ {
-		for cx := 0; cx < cols; cx++ {
-			var dots uint16
-			var rSum, gSum, bSum, n int
-			transparent := true
-			for by := 0; by < 4; by++ {
-				for bx := 0; bx < 2; bx++ {
-					px := cx*2 + bx - offX
-					py := cy*4 + by - offY
-					if px < 0 || px >= drawW || py < 0 || py >= drawH {
-						continue
-					}
-					r, g, bl, a := scaled.At(px, py).RGBA()
-					if a < 128 {
-						continue
-					}
-					transparent = false
-					dots |= brailleDot(bx, by)
-					rSum += int(r >> 8)
-					gSum += int(g >> 8)
-					bSum += int(bl >> 8)
-					n++
-				}
-			}
-			if transparent || n == 0 {
-				out.WriteByte(' ')
-				continue
-			}
-			out.WriteString(logoColorSeq(uint32(rSum/n)<<8, uint32(gSum/n)<<8, uint32(bSum/n)<<8, true))
-			out.WriteString(string(rune(0x2800 + int(dots))))
-			out.WriteString("\033[0m")
-		}
-		out.WriteByte('\n')
-	}
-	return out.String()
+	return style.Render(label)
 }
