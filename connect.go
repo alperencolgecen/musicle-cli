@@ -301,7 +301,7 @@ func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Co
 		style = style.Bold(true)
 	}
 
-	logo := renderLogo(logoPath, w-8, h-8)
+	logo := renderPNGLogo(logoPath, w-8, h-8)
 	labelColor := base
 	if focused {
 		labelColor = focus
@@ -311,9 +311,9 @@ func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Co
 	return style.Render(content)
 }
 
-// renderLogo renders a PNG as half-block ANSI art to fit within cols x rows,
+// renderPNGLogo renders a PNG as half-block ANSI art to fit within cols x rows,
 // reusing the package-level scaleImage helper used for playlist art.
-func renderLogo(path string, cols, rows int) string {
+func renderPNGLogo(path string, cols, rows int) string {
 	if cols < 4 || rows < 3 {
 		return ""
 	}

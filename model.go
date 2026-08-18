@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"MusicLeCLI/bridge"
+	"MusicLeCLI/components"
 	"MusicLeCLI/internal/browser"
 	"MusicLeCLI/state"
-	"MusicLeCLI/ui"
 )
 
 type StartDownloadMsg struct {
