@@ -5,12 +5,13 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"MusicLeCLI/bridge"
-	"MusicLeCLI/components"
+	"MusicLeCLI/internal/browser"
 	"MusicLeCLI/state"
+	"MusicLeCLI/ui"
 )
 
 type StartDownloadMsg struct {
@@ -48,6 +49,13 @@ type ThemeChangedMsg struct{}
 
 type setupDoneMsg struct{}
 type errorMsg string
+
+// ConnectResultMsg carries the result of a browser scan back to the UI.
+type ConnectResultMsg struct {
+	Platform  browser.Platform
+	Playlists []browser.Playlist
+	Err       error
+}
 
 type ViewType int
 
@@ -365,6 +373,12 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errorMsg:
 		m.showLangModal = false
+
+	case ConnectResultMsg:
+		if m.connect != nil {
+			m.connect.finishScan(msg.Playlists, msg.Err)
+		}
+		return m, nil
 	}
 
 	switch m.view {

@@ -5,6 +5,7 @@ import (
 	"image"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -15,13 +16,19 @@ import (
 
 // ConnectModel is the platform-selection screen of the browser connector.
 // It shows two brand-colored cards (Spotify / YouTube Music) between which the
-// user navigates with F1 or the arrow keys.
+// user navigates with F1 or the arrow keys. After a choice it runs a browser
+// scan behind a loading modal and then lists the discovered playlists.
 type ConnectModel struct {
-	width    int
-	height   int
-	focus    int // 0 = Spotify, 1 = YouTube Music
-	chosen   browser.Platform
-	confirmed bool
+	width  int
+	height int
+	focus  int // 0 = Spotify, 1 = YouTube Music
+	chosen browser.Platform
+
+	scanning  bool
+	scanStart time.Time
+	scanDone  bool
+	playlists []browser.Playlist
+	scanErr   error
 }
 
 func NewConnectModel() *ConnectModel {
@@ -45,16 +52,50 @@ func (m *ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.chosen = browser.PlatformYouTube
 			}
-			m.confirmed = true
-			return m, nil
+			m.scanning = true
+			m.scanStart = time.Now()
+			return m, scanConnectCmd(m.chosen)
 		}
 	}
 	return m, nil
 }
 
+// finishScan stores the result of a browser scan and dismisses the modal.
+func (m *ConnectModel) finishScan(pls []browser.Playlist, err error) {
+	m.scanning = false
+	m.scanDone = true
+	m.playlists = pls
+	m.scanErr = err
+}
+
+// scanConnectCmd runs the real CDP scan but guarantees the loading modal is
+// visible for at least 2 seconds (simulated API latency).
+func scanConnectCmd(platform browser.Platform) tea.Cmd {
+	return func() tea.Msg {
+		start := time.Now()
+		pls, err := browser.Connect(platform)
+		if d := time.Since(start); d < 2*time.Second {
+			time.Sleep(2*time.Second - d)
+		}
+		return ConnectResultMsg{Platform: platform, Playlists: pls, Err: err}
+	}
+}
+
 func (m *ConnectModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
+	}
+
+	if m.scanning {
+		return m.renderModal()
+	}
+	if m.scanDone {
+		if m.scanErr != nil {
+			return lipgloss.PlaceVertical(m.height, lipgloss.Center,
+				lipgloss.NewStyle().Foreground(ui.ColorError).Render(
+					fmt.Sprintf("Bağlantı hatası: %v", m.scanErr)))
+		}
+		return m.renderPlaylistList()
 	}
 
 	title := lipgloss.NewStyle().Foreground(ui.ColorPrimary).Bold(true).
@@ -74,16 +115,44 @@ func (m *ConnectModel) View() string {
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, spotify, "    ", yt)
 
-	var footer string
-	if m.confirmed {
-		footer = lipgloss.NewStyle().Foreground(ui.ColorAccent).Render(
-			fmt.Sprintf("Seçildi: %s — tarayıcı taraması sonraki adımda başlatılacak.", m.chosen))
-	} else {
-		footer = lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render(
-			"Spotify veya YouTube Music sekmesini tarayıcıda açık tutun.")
-	}
+	footer := lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render(
+		"Spotify veya YouTube Music sekmesini tarayıcıda açık tutun.")
 
 	return lipgloss.JoinVertical(lipgloss.Center, title, "", row, "", footer)
+}
+
+// renderModal shows the "reading browser info" loader while scanning.
+func (m *ConnectModel) renderModal() string {
+	frames := []string{"|", "/", "-", "\\"}
+	spin := frames[(time.Now().Nanosecond()/100000000)%4]
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ui.ColorAccent).
+		Padding(1, 4).
+		Align(lipgloss.Center)
+	content := lipgloss.JoinVertical(lipgloss.Center,
+		lipgloss.NewStyle().Foreground(ui.ColorPrimary).Bold(true).Render("Tarayıcı bilgisi alınıyor..."),
+		"",
+		lipgloss.NewStyle().Foreground(ui.ColorAccent).Render(spin+" "+string(m.chosen)+" taranıyor..."),
+	)
+	modal := box.Render(content)
+	return lipgloss.PlaceVertical(m.height, lipgloss.Center, modal)
+}
+
+// renderPlaylistList is a provisional view of the discovered playlists. The
+// confirm interaction is added in the next commit.
+func (m *ConnectModel) renderPlaylistList() string {
+	header := lipgloss.NewStyle().Foreground(ui.ColorPrimary).Bold(true).
+		Render(fmt.Sprintf("%s — %d playlist bulundu", m.chosen, len(m.playlists)))
+	var lines []string
+	for i, pl := range m.playlists {
+		lines = append(lines, fmt.Sprintf("  %d. %s  (%d şarkı)", i+1, pl.Name, pl.TrackCount))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "  (playlist bulunamadı)")
+	}
+	body := lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render(strings.Join(lines, "\n"))
+	return lipgloss.JoinVertical(lipgloss.Center, header, "", body)
 }
 
 func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Color, focused bool, w, h int) string {
