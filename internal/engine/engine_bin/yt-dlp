@@ -1,0 +1,57 @@
+#!/bin/bash
+# musicle-cli yt-dlp wrapper.
+#  - Strips the broken "--extractor-args youtube:player_client=web" argument.
+#  - Retries transient YouTube errors (403/throttle) with webm-capable clients.
+#  - Stderr is NOT echoed to the terminal (avoids console spam); it is logged to
+#    /tmp/musicle_ytwrap.log for debugging. The app shows only its own status.
+#  - stdout (audio bytes for the -o - path) is passed through untouched.
+REAL="$(dirname "$0")/yt-dlp.real"
+LOG="/tmp/musicle_ytwrap.log"
+
+# Decide client list: if a -f value requires [ext=webm], only use clients that
+# actually serve WebM/Opus, otherwise "Requested format is not available".
+has_webm=0
+for a in "$@"; do
+  case "$a" in *\[ext=webm\]*) has_webm=1;; esac
+done
+if [ "$has_webm" -eq 1 ]; then
+  CLIENTS=(android_vr web_synthetic)
+else
+  CLIENTS=(android_vr web_synthetic web android mweb tv ios)
+fi
+
+# Build CLEAN args (strip player_client=web and the [ext=webm] constraint only
+# if it would break a chosen client — kept for the legacy path so it still gets
+# a WebM stream; we just avoid rotating to clients that can't serve it).
+CLEAN=()
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--extractor-args" ]; then
+    if [ "$2" != "${2#*player_client=web}" ]; then shift 2; continue
+    else CLEAN+=("$1"); shift; CLEAN+=("$2"); shift; continue; fi
+  fi
+  if [ "$1" = "youtube:player_client=web" ]; then shift; continue; fi
+  CLEAN+=("$1"); shift
+done
+
+MAX_TRIES=8
+rc=1
+for ((try=1; try<=MAX_TRIES; try++)); do
+  args=("${CLEAN[@]}")
+  if [ "$try" -gt 1 ]; then
+    newargs=(); inserted=0; client="youtube:player_client=${CLIENTS[$(( (try-2) % ${#CLIENTS[@]} ))]}"
+    for a in "${args[@]}"; do
+      if [ "$inserted" -eq 0 ] && [ "$a" = "--" ]; then newargs+=(--extractor-args "$client"); inserted=1; fi
+      newargs+=("$a")
+    done
+    [ "$inserted" -eq 0 ] && newargs+=(--extractor-args "$client")
+    args=("${newargs[@]}")
+  fi
+
+  "$REAL" "${args[@]}" 2>>"$LOG"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    exit 0
+  fi
+  sleep $((try*2))
+done
+exit "$rc"
