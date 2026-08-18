@@ -70,7 +70,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" build/musicle-cli_Linux_x86_64.tar.gz
+        run:           gh release upload --clobber "$TAG" build/musicle-cli_Linux_x86_64.tar.gz
 
   linux-arm64:
     needs: create-release
@@ -93,12 +93,15 @@ jobs:
           docker run --rm --platform linux/arm64 \
             -v "$PWD:/build" -w /build \
             -e CGO_ENABLED=1 \
-            arm64v8/ubuntu:24.04 /bin/bash -c "
-              apt-get update -qq && apt-get install -y -qq ca-certificates golang-go libasound2-dev
-              ./scripts/prepare-engine.sh linux
-              go build -tags engine_assets -ldflags='-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=\$(date -u +%Y-%m-%d)' \
-                -o musicle-cli-linux-arm64 .
-            "
+          arm64v8/ubuntu:24.04 /bin/bash -c "
+            apt-get update -qq && apt-get install -y -qq ca-certificates libasound2-dev curl
+            curl -sL https://go.dev/dl/go1.26.1.linux-arm64.tar.gz -o /tmp/go.tgz
+            tar -C /usr/local -xzf /tmp/go.tgz
+            export PATH=/usr/local/go/bin:\$PATH
+            ./scripts/prepare-engine.sh linux
+            go build -tags engine_assets -ldflags='-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=\$(date -u +%Y-%m-%d)' \
+              -o musicle-cli-linux-arm64 .
+          "
       - name: Package archive
         run: |
           mkdir -p build/musicle-cli_Linux_arm64
@@ -109,7 +112,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" build/musicle-cli_Linux_arm64.tar.gz
+        run:           gh release upload --clobber "$TAG" build/musicle-cli_Linux_arm64.tar.gz
 
   windows:
     needs: create-release
@@ -148,7 +151,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" build/musicle-cli_Windows_${{ matrix.arch }}.tar.gz
+        run:           gh release upload --clobber "$TAG" build/musicle-cli_Windows_${{ matrix.arch }}.tar.gz
 
   appimage:
     needs: create-release
@@ -214,7 +217,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" musicle-cli_*.AppImage
+        run:           gh release upload --clobber "$TAG" musicle-cli_*.AppImage
 
   macos-intel:
     needs: create-release
@@ -247,7 +250,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" build/musicle-cli_macOS_x86_64.tar.gz
+        run:           gh release upload --clobber "$TAG" build/musicle-cli_macOS_x86_64.tar.gz
 
   macos-arm:
     needs: create-release
@@ -280,4 +283,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: gh release upload "$TAG" build/musicle-cli_macOS_arm64.tar.gz
+        run:           gh release upload --clobber "$TAG" build/musicle-cli_macOS_arm64.tar.gz
