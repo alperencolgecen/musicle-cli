@@ -245,9 +245,7 @@ func (m *ConnectModel) View() string {
 	}
 	if m.scanDone {
 		if m.scanErr != nil {
-			return lipgloss.PlaceVertical(m.height, lipgloss.Center,
-				lipgloss.NewStyle().Foreground(ui.ColorError).Render(
-					fmt.Sprintf("Bağlantı hatası: %v", m.scanErr)))
+			return m.renderErrorModal(m.scanErr)
 		}
 		return m.renderPlaylistList()
 	}
@@ -273,6 +271,23 @@ func (m *ConnectModel) View() string {
 		"Spotify veya YouTube Music sekmesini tarayıcıda açık tutun.")
 
 	return lipgloss.JoinVertical(lipgloss.Center, title, "", row, "", footer)
+}
+
+// renderErrorModal shows a scan failure as a small, dismissible modal (Esc).
+func (m *ConnectModel) renderErrorModal(err error) string {
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ui.ColorError).
+		Padding(1, 4).
+		Align(lipgloss.Center)
+	content := lipgloss.JoinVertical(lipgloss.Center,
+		lipgloss.NewStyle().Foreground(ui.ColorError).Bold(true).Render("Bağlantı hatası"),
+		"",
+		lipgloss.NewStyle().Foreground(ui.ColorSecondary).Width(60).Align(lipgloss.Center).Render(err.Error()),
+		"",
+		lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render("Esc ile kapat"),
+	)
+	return lipgloss.PlaceVertical(m.height, lipgloss.Center, box.Render(content))
 }
 
 // renderModal shows the "reading browser info" loader while scanning.

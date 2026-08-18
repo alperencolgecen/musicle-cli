@@ -301,6 +301,10 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case msg.Type == tea.KeyEscape:
+			if m.connectActive {
+				m.connectActive = false
+				return m, nil
+			}
 			if m.playerBarFocused {
 				m.playerBarFocused = false
 			}
