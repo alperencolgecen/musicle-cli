@@ -188,16 +188,16 @@ jobs:
           mkdir -p "$APPDIR/usr/share/metainfo"
 
           cat > "$APPDIR/io.anomalyco.musicle-cli.desktop" << 'DESKTOP'
-[Desktop Entry]
-Name=MusicLe
-Comment=Terminal music player with playlist management and audio visualization
-Exec=musicle-cli
-Icon=io.anomalyco.musicle-cli
-Terminal=true
-Type=Application
-Categories=Audio;Music;Player;
-StartupNotify=false
-DESKTOP
+          [Desktop Entry]
+          Name=MusicLe
+          Comment=Terminal music player with playlist management and audio visualization
+          Exec=musicle-cli
+          Icon=io.anomalyco.musicle-cli
+          Terminal=true
+          Type=Application
+          Categories=Audio;Music;Player;
+          StartupNotify=false
+          DESKTOP
           cp "$APPDIR/io.anomalyco.musicle-cli.desktop" "$APPDIR/usr/share/applications/"
 
           cp assets/MusicLe.png "$APPDIR/usr/share/icons/hicolor/1024x1024/apps/io.anomalyco.musicle-cli.png"
