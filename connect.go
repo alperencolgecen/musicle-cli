@@ -29,6 +29,9 @@ type ConnectModel struct {
 	scanDone  bool
 	playlists []browser.Playlist
 	scanErr   error
+
+	plFocus   int
+	confirmed map[int]bool
 }
 
 func NewConnectModel() *ConnectModel {
@@ -39,25 +42,72 @@ func (m *ConnectModel) Init() tea.Cmd { return nil }
 
 func (m *ConnectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
-		switch k.String() {
-		case "left", "up", "shift+tab":
-			m.focus = 0
+		switch {
+		case m.scanning:
 			return m, nil
-		case "right", "down", "tab":
-			m.focus = 1
-			return m, nil
-		case "enter", " ":
-			if m.focus == 0 {
-				m.chosen = browser.PlatformSpotify
-			} else {
-				m.chosen = browser.PlatformYouTube
+
+		case m.scanDone && m.scanErr == nil:
+			switch k.String() {
+			case "up", "k":
+				if m.plFocus > 0 {
+					m.plFocus--
+				}
+				return m, nil
+			case "down", "j":
+				if m.plFocus < len(m.playlists)-1 {
+					m.plFocus++
+				}
+				return m, nil
+			case "enter", " ":
+				m.toggleConfirm(m.plFocus)
+				return m, nil
+			case "esc":
+				m.scanDone = false
+				m.playlists = nil
+				m.plFocus = 0
+				m.confirmed = nil
+				return m, nil
 			}
-			m.scanning = true
-			m.scanStart = time.Now()
-			return m, scanConnectCmd(m.chosen)
+
+		default:
+			switch k.String() {
+			case "left", "up", "shift+tab":
+				m.focus = 0
+				return m, nil
+			case "right", "down", "tab":
+				m.focus = 1
+				return m, nil
+			case "enter", " ":
+				if m.focus == 0 {
+					m.chosen = browser.PlatformSpotify
+				} else {
+					m.chosen = browser.PlatformYouTube
+				}
+				m.scanning = true
+				m.scanStart = time.Now()
+				return m, scanConnectCmd(m.chosen)
+			}
 		}
 	}
 	return m, nil
+}
+
+// toggleConfirm marks the playlist at index i as confirmed and advances focus
+// to the next unconfirmed entry so Enter can confirm sequentially.
+func (m *ConnectModel) toggleConfirm(i int) {
+	if m.confirmed == nil {
+		m.confirmed = map[int]bool{}
+	}
+	if m.confirmed[i] {
+		return
+	}
+	m.confirmed[i] = true
+	for j := m.plFocus + 1; j < len(m.playlists); j++ {
+		if !m.confirmed[j] {
+			m.plFocus = j
+			return
+		}
+	}
 }
 
 // finishScan stores the result of a browser scan and dismisses the modal.
@@ -139,20 +189,44 @@ func (m *ConnectModel) renderModal() string {
 	return lipgloss.PlaceVertical(m.height, lipgloss.Center, modal)
 }
 
-// renderPlaylistList is a provisional view of the discovered playlists. The
-// confirm interaction is added in the next commit.
+// renderPlaylistList shows the discovered playlists, each with an "Onayla"
+// button. The focused row is confirmed with Enter, which advances to the next
+// unconfirmed row so playlists can be approved sequentially.
 func (m *ConnectModel) renderPlaylistList() string {
 	header := lipgloss.NewStyle().Foreground(ui.ColorPrimary).Bold(true).
 		Render(fmt.Sprintf("%s — %d playlist bulundu", m.chosen, len(m.playlists)))
-	var lines []string
+
+	var rows []string
 	for i, pl := range m.playlists {
-		lines = append(lines, fmt.Sprintf("  %d. %s  (%d şarkı)", i+1, pl.Name, pl.TrackCount))
+		cursor := "  "
+		if i == m.plFocus {
+			cursor = "▶ "
+		}
+		name := cursor + pl.Name
+		count := lipgloss.NewStyle().Foreground(ui.ColorSecondary).
+			Render(fmt.Sprintf("(%d şarkı)", pl.TrackCount))
+
+		var action string
+		switch {
+		case m.confirmed[i]:
+			action = lipgloss.NewStyle().Foreground(ui.ColorSuccess).Render("[Onaylandı]")
+		case i == m.plFocus:
+			action = ui.AccentButtonStyle.Render(" Onayla ")
+		default:
+			action = ui.ButtonStyle.Render(" Onayla ")
+		}
+		row := lipgloss.JoinHorizontal(lipgloss.Center, name, "   ", count, "   ", action)
+		rows = append(rows, row)
 	}
-	if len(lines) == 0 {
-		lines = append(lines, "  (playlist bulunamadı)")
+	if len(rows) == 0 {
+		rows = append(rows, lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render("(playlist bulunamadı)"))
 	}
-	body := lipgloss.NewStyle().Foreground(ui.ColorSecondary).Render(strings.Join(lines, "\n"))
-	return lipgloss.JoinVertical(lipgloss.Center, header, "", body)
+
+	body := strings.Join(rows, "\n")
+	footer := lipgloss.NewStyle().Foreground(ui.ColorSecondary).
+		Render("↑/↓ ile gezin  •  Enter ile onayla  •  Esc ile geri")
+
+	return lipgloss.JoinVertical(lipgloss.Center, header, "", body, "", footer)
 }
 
 func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Color, focused bool, w, h int) string {
