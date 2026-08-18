@@ -1250,11 +1250,11 @@ func (m *HomeModel) viewSidebar(bodyH int) string {
 		w = 55
 	}
 
-	connectH := 7
-	if bodyH < 16 {
-		connectH = bodyH - 9
-		if connectH < 5 {
-			connectH = 5
+	connectH := 8
+	if bodyH < 18 {
+		connectH = bodyH - 10
+		if connectH < 6 {
+			connectH = 6
 		}
 	}
 	consoleH := (bodyH - connectH) * 6 / 10
@@ -1304,13 +1304,22 @@ func (m *HomeModel) renderHomeCard(name, logoPath string, base, focus lipgloss.C
 		BorderForeground(border).
 		Width(w).
 		Height(h).
-		Align(lipgloss.Left, lipgloss.Center)
+		Align(lipgloss.Center, lipgloss.Center)
 	if focused {
 		style = style.Bold(true)
 	}
-	logo := renderPNGLogo(logoPath, 6, h-2)
+	// Fill the card with a wide logo, and stack the name beneath it.
+	logoRows := h - 3
+	if logoRows < 2 {
+		logoRows = 2
+	}
+	logoCols := w - 4
+	if logoCols < 4 {
+		logoCols = 4
+	}
+	logo := renderPNGLogo(logoPath, logoCols, logoRows)
 	label := lipgloss.NewStyle().Foreground(labelColor).Bold(true).Render(name)
-	content := lipgloss.JoinHorizontal(lipgloss.Center, logo, "  ", label)
+	content := lipgloss.JoinVertical(lipgloss.Center, logo, "", label)
 	return style.Render(content)
 }
 

@@ -10,12 +10,69 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"MusicLeCLI/bridge"
 	"MusicLeCLI/internal/browser"
 	"MusicLeCLI/state"
 	"MusicLeCLI/ui"
 )
+
+// logoColorSeq returns an ANSI SGR sequence for the given RGB color, adapted to
+// the terminal's active color profile (truecolor / 256 / 16). This mirrors how
+// lipgloss renders its own colors and avoids emitting raw 24-bit escapes that
+// terminals without truecolor support would drop (leaving blank cells).
+func logoColorSeq(r, g, b uint32, fg bool) string {
+	rf, gf, bf := byte(r>>8), byte(g>>8), byte(b>>8)
+	prefix := "\033[38"
+	if !fg {
+		prefix = "\033[48"
+	}
+	switch lipgloss.ColorProfile() {
+	case termenv.TrueColor:
+		return fmt.Sprintf("%s;2;%d;%d;%dm", prefix, rf, gf, bf)
+	case termenv.ANSI256:
+		return fmt.Sprintf("%s;5;%dm", prefix, rgbTo256(rf, gf, bf))
+	default: // ANSI (16) or Ascii
+		if lipgloss.ColorProfile() == termenv.Ascii {
+			return ""
+		}
+		return fmt.Sprintf("%s;5;%dm", prefix, rgbTo16(rf, gf, bf))
+	}
+}
+
+// ansi16RGB is the standard 16-color palette (indices 0-15).
+var ansi16RGB = [16][3]byte{
+	{0, 0, 0}, {128, 0, 0}, {0, 128, 0}, {128, 128, 0},
+	{0, 0, 128}, {128, 0, 128}, {0, 128, 128}, {192, 192, 192},
+	{128, 128, 128}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
+	{0, 0, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255},
+}
+
+func rgbTo16(r, g, b byte) int {
+	best, bestD := 0, int(^uint(0)>>1)
+	for i, c := range ansi16RGB {
+		d := int(r-c[0])*int(r-c[0]) + int(g-c[1])*int(g-c[1]) + int(b-c[2])*int(b-c[2])
+		if d < bestD {
+			bestD, best = d, i
+		}
+	}
+	return best
+}
+
+func rgbTo256(r, g, b byte) int {
+	if r == g && g == b {
+		if r < 8 {
+			return 16
+		}
+		if r > 248 {
+			return 231
+		}
+		return 232 + int((int(r)-8)*23/240)
+	}
+	lvl := func(v byte) int { return int(int(v) * 5 / 255) }
+	return 16 + 36*lvl(r) + 6*lvl(g) + lvl(b)
+}
 
 // ConnectModel is the platform-selection screen of the browser connector.
 // It shows two brand-colored cards (Spotify / YouTube Music) between which the
@@ -315,7 +372,7 @@ func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Co
 // renderPNGLogo renders a PNG as half-block ANSI art to fit within cols x rows,
 // reusing the package-level scaleImage helper used for playlist art.
 func renderPNGLogo(path string, cols, rows int) string {
-	if cols < 4 || rows < 3 {
+	if cols < 3 || rows < 2 {
 		return ""
 	}
 	data, err := logoFS.ReadFile(path)
@@ -341,14 +398,18 @@ func renderPNGLogo(path string, cols, rows int) string {
 				continue
 			}
 			if a2 < 128 {
-				out.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm▀\033[0m", r1>>8, g1>>8, b1>>8))
+				out.WriteString(logoColorSeq(r1, g1, b1, true))
+				out.WriteString("▀\033[0m")
 				continue
 			}
 			if a1 < 128 {
-				out.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%dm▄\033[0m", r2>>8, g2>>8, b2>>8))
+				out.WriteString(logoColorSeq(r2, g2, b2, true))
+				out.WriteString("▄\033[0m")
 				continue
 			}
-			out.WriteString(fmt.Sprintf("\033[38;2;%d;%d;%d;48;2;%d;%d;%dm▄\033[0m", r2>>8, g2>>8, b2>>8, r1>>8, g1>>8, b1>>8))
+			out.WriteString(logoColorSeq(r2, g2, b2, true))
+			out.WriteString(logoColorSeq(r1, g1, b1, false))
+			out.WriteString("▄\033[0m")
 		}
 		out.WriteByte('\n')
 	}
