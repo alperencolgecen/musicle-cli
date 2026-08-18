@@ -32,6 +32,12 @@ var (
 	ColorSuccess    = lipgloss.Color("#1DB954")
 	ColorRowHover   = lipgloss.Color("#1ED760")
 	ColorBlack      = lipgloss.Color("#000000")
+
+	// Brand colors for the browser connector — fixed, independent of theme.
+	ColorSpotify      = lipgloss.Color("#1DB954") // Spotify green
+	ColorSpotifyFocus = lipgloss.Color("#39FF14") // phosphor green (focused)
+	ColorYouTube      = lipgloss.Color("#FF0000") // YouTube red
+	ColorYouTubeFocus = lipgloss.Color("#FF3131") // phosphor red (focused)
 )
 
 // Styles are mutable — call ApplyTheme() to rebuild

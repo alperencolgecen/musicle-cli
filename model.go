@@ -57,6 +57,7 @@ const (
 	ViewProfile
 	ViewPlaylist
 	ViewSettings
+	ViewConnect
 )
 
 type MainModel struct {
@@ -70,6 +71,7 @@ type MainModel struct {
 	playlist  *PlaylistModel
 	downloads *DownloadsModel
 	settings  *SettingsModel
+	connect   *ConnectModel
 
 	activeNav        string
 	playerBarFocused bool
@@ -89,6 +91,7 @@ func NewMainModel() *MainModel {
 		playlist:      NewPlaylistModel(),
 		downloads:     NewDownloadsModel(),
 		settings:      NewSettingsModel(),
+		connect:       NewConnectModel(),
 		ready:         true,
 		showLangModal: state.Current.IsFirstLaunch,
 	}
@@ -203,6 +206,10 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.downloads != nil {
 					wrapped = m.downloads.cycleFocus()
 				}
+			case ViewConnect:
+				if m.connect != nil {
+					m.connect.focus = (m.connect.focus + 1) % 2
+				}
 			}
 			if wrapped {
 				m.playerBarFocused = true
@@ -233,7 +240,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.playerBarFocused {
 				m.playerBarFocused = false
 			}
-			m.view = (m.view + 1) % 5
+			m.view = (m.view + 1) % 6
 			switch m.view {
 			case ViewHome:
 				m.activeNav = "home"
@@ -249,6 +256,8 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.activeNav = "playlist"
 			case ViewSettings:
 				m.activeNav = "settings"
+			case ViewConnect:
+				m.activeNav = "connect"
 			}
 			return m, nil
 		case msg.Type == tea.KeyF3:
@@ -399,6 +408,14 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+	case ViewConnect:
+		if m.connect != nil {
+			newC, cmd := m.connect.Update(msg)
+			m.connect = newC.(*ConnectModel)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 	}
 
 	return m, tea.Batch(cmds...)
@@ -490,6 +507,12 @@ func (m *MainModel) View() string {
 			m.downloads.width = m.width
 			m.downloads.height = bodyH
 			body = m.downloads.View()
+		}
+	case ViewConnect:
+		if m.connect != nil {
+			m.connect.width = m.width
+			m.connect.height = bodyH
+			body = m.connect.View()
 		}
 	}
 	if m.view != ViewHome {
