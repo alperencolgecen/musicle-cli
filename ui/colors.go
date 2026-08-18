@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +39,10 @@ var (
 	ColorSpotifyFocus = lipgloss.Color("#39FF14") // phosphor green (focused)
 	ColorYouTube      = lipgloss.Color("#FF0000") // YouTube red
 	ColorYouTubeFocus = lipgloss.Color("#FF3131") // phosphor red (focused)
+	// Lighter variants used for the home sidebar connect cards so the brand
+	// colors read clearly against the dark surface.
+	ColorSpotifyLight = lipgloss.Color("#5BE37A")
+	ColorYouTubeLight = lipgloss.Color("#FF6B6B")
 )
 
 // Styles are mutable — call ApplyTheme() to rebuild
@@ -292,6 +297,93 @@ var spectrumColors = []lipgloss.Color{
 	lipgloss.Color("#BB00FF"),
 	lipgloss.Color("#FF00CC"),
 	lipgloss.Color("#FF3399"),
+}
+
+// SpectrumPalettes maps a palette name to its 17 band color stops (low -> high
+// frequency). Users can pick one from Settings -> Extras.
+var SpectrumPalettes = map[string][]string{
+	"RGB": {
+		"#FF0000", "#FF3300", "#FF6600", "#FF9900", "#FFCC00", "#FFFF00",
+		"#AAFF00", "#55FF00", "#00FF44", "#00FFAA", "#00CCFF", "#0099FF",
+		"#4466FF", "#8833FF", "#BB00FF", "#FF00CC", "#FF3399",
+	},
+	"Spotify": {
+		"#053B1E", "#0A5A2C", "#0E7338", "#129145", "#17B054", "#1DB954",
+		"#2FD167", "#45E87C", "#39FF14", "#6BFF47", "#8CFF6B", "#A8FF8C",
+		"#C4FFB0", "#DFFFCF", "#EFFFE4", "#6BFF47", "#39FF14",
+	},
+	"YouTube": {
+		"#3B0000", "#5A0505", "#730A0A", "#941010", "#B51818", "#E01B1B",
+		"#FF0000", "#FF2A2A", "#FF3131", "#FF5A5A", "#FF7A7A", "#FF9A9A",
+		"#FFB0B0", "#FFC9C9", "#FFE0E0", "#FF3131", "#FF5A5A",
+	},
+	"Aurora": {
+		"#001B3B", "#003366", "#00509E", "#0077C7", "#00A3E0", "#00C2D6",
+		"#1FE0C2", "#4CE0A8", "#7CFFB0", "#4CC9FF", "#6A8CFF", "#9A6BFF",
+		"#C24CFF", "#E04CE0", "#FF7CE0", "#4CC9FF", "#9A6BFF",
+	},
+	"Fire": {
+		"#1A0000", "#3D0A00", "#5A1400", "#7A2200", "#9E3300", "#C24A00",
+		"#E86A00", "#FF8C00", "#FFB300", "#FFD400", "#FFF000", "#FFFF66",
+		"#FFFFB3", "#FFFFFF", "#FFE0E0", "#FFB300", "#FFD400",
+	},
+	"Mono": {
+		"#1A1A1A", "#2B2B2B", "#3D3D3D", "#4F4F4F", "#616161", "#737373",
+		"#858585", "#979797", "#A9A9A9", "#BBBBBB", "#CDCDCD", "#DFDFDF",
+		"#EFEFEF", "#F7F7F7", "#FFFFFF", "#BBBBBB", "#FFFFFF",
+	},
+	"Ocean": {
+		"#001F2E", "#00384F", "#00566E", "#00768C", "#0096A8", "#00B6C4",
+		"#00D6D0", "#1FE6C8", "#4CF0D0", "#6CDFE0", "#4CA8E0", "#6A8CE0",
+		"#7C7CFF", "#A06BFF", "#C99AFF", "#00D6D0", "#4CF0D0",
+	},
+}
+
+// SetSpectrumPalette swaps the active spectrum colors to the named palette,
+// rebuilding the style cache. Unknown names fall back to RGB.
+func SetSpectrumPalette(name string) {
+	src, ok := SpectrumPalettes[name]
+	if !ok {
+		src = SpectrumPalettes["RGB"]
+	}
+	spectrumColors = make([]lipgloss.Color, len(src))
+	for i, h := range src {
+		spectrumColors[i] = lipgloss.Color(h)
+	}
+	spectrumStyleCache = make([]lipgloss.Style, len(spectrumColors))
+	for i, c := range spectrumColors {
+		spectrumStyleCache[i] = lipgloss.NewStyle().Foreground(c)
+	}
+}
+
+// SpectrumPaletteNames returns the available palette names, sorted.
+func SpectrumPaletteNames() []string {
+	names := make([]string, 0, len(SpectrumPalettes))
+	for n := range SpectrumPalettes {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// PalettePreview renders a horizontal gradient sample of the named palette.
+func PalettePreview(name string, n int) string {
+	src := SpectrumPalettes[name]
+	if len(src) == 0 {
+		src = SpectrumPalettes["RGB"]
+	}
+	if n < 1 {
+		n = 1
+	}
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		idx := int(float64(i) / float64(n) * float64(len(src)))
+		if idx >= len(src) {
+			idx = len(src) - 1
+		}
+		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(src[idx])).Render("█"))
+	}
+	return sb.String()
 }
 
 var waveShades = []string{" ", "░", "▒", "▓", "█"}

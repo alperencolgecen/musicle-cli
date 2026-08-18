@@ -12,6 +12,7 @@ import (
 	"MusicLeCLI/components"
 	"MusicLeCLI/internal/browser"
 	"MusicLeCLI/state"
+	"MusicLeCLI/ui"
 )
 
 type StartDownloadMsg struct {
@@ -60,6 +61,13 @@ type ConnectResultMsg struct {
 // connectDoneMsg returns the UI to the home screen after a successful import.
 type connectDoneMsg struct{}
 
+// homeConnectMsg is sent when the user launches the browser connector from a
+// connect card on the home sidebar. MainModel opens the connect overlay over the
+// home view and starts scanning the chosen platform.
+type homeConnectMsg struct {
+	platform browser.Platform
+}
+
 type ViewType int
 
 const (
@@ -68,7 +76,6 @@ const (
 	ViewProfile
 	ViewPlaylist
 	ViewSettings
-	ViewConnect
 )
 
 type MainModel struct {
@@ -77,12 +84,13 @@ type MainModel struct {
 	height int
 	ready  bool
 
-	home      *HomeModel
-	profile   *ProfileModel
-	playlist  *PlaylistModel
-	downloads *DownloadsModel
-	settings  *SettingsModel
-	connect   *ConnectModel
+	home          *HomeModel
+	profile       *ProfileModel
+	playlist      *PlaylistModel
+	downloads     *DownloadsModel
+	settings      *SettingsModel
+	connect       *ConnectModel
+	connectActive bool // when true the connect flow overlays the home view
 
 	activeNav        string
 	playerBarFocused bool
@@ -162,6 +170,27 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// While the connect flow overlays the home view, route all key input to
+		// the ConnectModel. Esc cancels and closes the overlay.
+		if m.connectActive {
+			if msg.Type == tea.KeyCtrlC {
+				return m, tea.Quit
+			}
+			if msg.String() == "esc" {
+				m.connectActive = false
+				m.connect = NewConnectModel()
+				return m, nil
+			}
+			if m.connect != nil {
+				newC, cmd := m.connect.Update(msg)
+				m.connect = newC.(*ConnectModel)
+				if cmd != nil {
+					return m, cmd
+				}
+			}
+			return m, nil
+		}
+
 		switch {
 		case msg.Type == tea.KeyCtrlC:
 			if m.view == ViewDownloads && m.downloads != nil {
@@ -217,10 +246,6 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.downloads != nil {
 					wrapped = m.downloads.cycleFocus()
 				}
-			case ViewConnect:
-				if m.connect != nil {
-					m.connect.focus = (m.connect.focus + 1) % 2
-				}
 			}
 			if wrapped {
 				m.playerBarFocused = true
@@ -251,7 +276,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.playerBarFocused {
 				m.playerBarFocused = false
 			}
-			m.view = (m.view + 1) % 6
+			m.view = (m.view + 1) % 5
 			switch m.view {
 			case ViewHome:
 				m.activeNav = "home"
@@ -267,8 +292,6 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.activeNav = "playlist"
 			case ViewSettings:
 				m.activeNav = "settings"
-			case ViewConnect:
-				m.activeNav = "connect"
 			}
 			return m, nil
 		case msg.Type == tea.KeyF3:
@@ -384,12 +407,25 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case connectDoneMsg:
-		m.view = ViewHome
+		m.connectActive = false
 		m.activeNav = "home"
 		if m.home != nil {
 			m.home.refreshAllContent()
 		}
 		return m, nil
+
+	case homeConnectMsg:
+		if m.connect == nil {
+			m.connect = NewConnectModel()
+		}
+		m.connect.focus = 0
+		if msg.platform == browser.PlatformYouTube {
+			m.connect.focus = 1
+		}
+		m.connect.scanning = true
+		m.connect.scanStart = time.Now()
+		m.connectActive = true
+		return m, scanConnectCmd(msg.platform)
 	}
 
 	switch m.view {
@@ -429,14 +465,6 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.downloads != nil {
 			newD, cmd := m.downloads.Update(msg)
 			m.downloads = newD.(*DownloadsModel)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-	case ViewConnect:
-		if m.connect != nil {
-			newC, cmd := m.connect.Update(msg)
-			m.connect = newC.(*ConnectModel)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -533,12 +561,17 @@ func (m *MainModel) View() string {
 			m.downloads.height = bodyH
 			body = m.downloads.View()
 		}
-	case ViewConnect:
-		if m.connect != nil {
-			m.connect.width = m.width
-			m.connect.height = bodyH
-			body = m.connect.View()
-		}
+	}
+
+	if m.connectActive && m.connect != nil {
+		m.connect.width = m.width
+		m.connect.height = bodyH
+		overlay := lipgloss.NewStyle().
+			Width(m.width).
+			Height(bodyH).
+			Background(ui.ColorBackground).
+			Render(m.connect.View())
+		body = placeOverlay(body, overlay, m.width)
 	}
 	if m.view != ViewHome {
 		body = lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(body)

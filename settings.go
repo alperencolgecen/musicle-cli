@@ -59,6 +59,9 @@ type SettingsModel struct {
 	soundSel     int            // highlighted device index
 	volLimit     int            // 0-100, mirrors state.Current.SoundVolumeLimit
 
+	// Extras tab state
+	spectrumIdx int // highlighted spectrum palette index
+
 	// Scroll offset for the long-text tabs (Policies, About).
 	scroll int
 }
@@ -80,6 +83,13 @@ func NewSettingsModel() *SettingsModel {
 	m.volLimit = state.Current.SoundVolumeLimit
 	if m.volLimit <= 0 || m.volLimit > 100 {
 		m.volLimit = 100
+	}
+	names := ui.SpectrumPaletteNames()
+	for i, n := range names {
+		if n == state.Current.SpectrumPalette {
+			m.spectrumIdx = i
+			break
+		}
 	}
 	m.soundDevices = audio.ListOutputDevices()
 	// Pre-select the configured device if present.
@@ -178,7 +188,7 @@ func (m *SettingsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // hasSelectionList reports whether the active tab owns a navigable list.
 func (m *SettingsModel) hasSelectionList() bool {
 	switch settingsTabs[m.activeTab].id {
-	case "tab.theme", "tab.language", "tab.sound":
+	case "tab.theme", "tab.language", "tab.sound", "tab.extras":
 		return true
 	}
 	return false
@@ -196,6 +206,11 @@ func (m *SettingsModel) moveSelection(dir int) {
 	case "tab.language":
 		langs := state.AllLanguages()
 		m.langIdx = (m.langIdx + dir + len(langs)) % len(langs)
+	case "tab.extras":
+		names := ui.SpectrumPaletteNames()
+		if len(names) > 0 {
+			m.spectrumIdx = (m.spectrumIdx + dir + len(names)) % len(names)
+		}
 	}
 }
 
@@ -251,6 +266,13 @@ func (m *SettingsModel) applyActiveTab() tea.Cmd {
 					_ = os.Setenv(kv[0], kv[1])
 				}
 			}
+		}
+	case "tab.extras":
+		names := ui.SpectrumPaletteNames()
+		if m.spectrumIdx >= 0 && m.spectrumIdx < len(names) {
+			state.Current.SpectrumPalette = names[m.spectrumIdx]
+			_ = state.Current.SaveConfig()
+			ui.SetSpectrumPalette(names[m.spectrumIdx])
 		}
 	}
 	return nil
@@ -400,7 +422,7 @@ func (m *SettingsModel) renderRightPanel(width int, height int) string {
 	case "tab.policies":
 		content = m.renderScrollableTab(width, height, Tr("tab.policies"), policiesContent())
 	case "tab.extras":
-		content = m.renderScrollableTab(width, height, Tr("tab.extras"), extrasContent())
+		content = m.renderExtrasTab(width)
 	case "tab.about":
 		content = m.renderScrollableTab(width, height, Tr("tab.about"), aboutContent())
 	default:
@@ -432,6 +454,29 @@ func (m *SettingsModel) renderThemeTab(width int) string {
 		lines = append(lines, line)
 	}
 	lines = append(lines, "")
+	lines = append(lines, "")
+	lines = append(lines, ui.DimStyle.Render("  "+Tr("settings.select_hint")))
+	return strings.Join(lines, "\n")
+}
+
+func (m *SettingsModel) renderExtrasTab(width int) string {
+	names := ui.SpectrumPaletteNames()
+	previewW := width - 16
+	if previewW < 8 {
+		previewW = 8
+	}
+	lines := []string{
+		ui.SectionTitleStyle.Render(" " + Tr("tab.extras") + " "),
+		"",
+	}
+	for i, n := range names {
+		preview := ui.PalettePreview(n, previewW)
+		line := "  " + preview + "  " + n
+		if m.rightFocused && i == m.spectrumIdx {
+			line = ui.AccentStyle.Bold(true).Render("> ") + preview + "  " + ui.WhiteStyle.Bold(true).Render(n)
+		}
+		lines = append(lines, line)
+	}
 	lines = append(lines, "")
 	lines = append(lines, ui.DimStyle.Render("  "+Tr("settings.select_hint")))
 	return strings.Join(lines, "\n")

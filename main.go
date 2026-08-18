@@ -95,6 +95,7 @@ func main() {
 		state.Current.Language = state.LangEnglish
 	} else {
 		ui.ApplyTheme(state.Current.Theme)
+		ui.SetSpectrumPalette(state.Current.SpectrumPalette)
 		if scanErr := state.Current.ScanProfiles(); scanErr != nil || len(state.Current.Profiles) == 0 {
 			state.Current.IsFirstLaunch = true
 		} else {

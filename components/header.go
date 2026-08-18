@@ -41,7 +41,6 @@ func RenderHeader(width int, activeView string) string {
 		{"profile", " Profile "},
 		{"playlist", " Playlist "},
 		{"settings", " General "},
-		{"connect", " Connect "},
 	}
 	var tabs []string
 	for _, t := range tabDefs {

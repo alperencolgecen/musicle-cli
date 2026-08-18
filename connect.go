@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"os"
@@ -317,12 +318,15 @@ func renderPNGLogo(path string, cols, rows int) string {
 	if cols < 4 || rows < 3 {
 		return ""
 	}
-	f, err := os.Open(path)
+	data, err := logoFS.ReadFile(path)
 	if err != nil {
-		return ""
+		// Fallback to the filesystem (e.g. when running from the repo root).
+		data, err = os.ReadFile(path)
+		if err != nil {
+			return ""
+		}
 	}
-	defer f.Close()
-	img, _, err := image.Decode(f)
+	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return ""
 	}

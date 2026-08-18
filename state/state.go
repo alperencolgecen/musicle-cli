@@ -138,6 +138,9 @@ type AppState struct {
 	// Sound settings
 	SoundOutputDevice string // selected output sink name (empty = system default)
 	SoundVolumeLimit  int    // max percentage of device volume the app may use (0-100)
+
+	// Spectrum visualizer color palette name (see ui.SpectrumPalettes)
+	SpectrumPalette string
 }
 
 // Current is the global app state
@@ -146,6 +149,7 @@ var Current = &AppState{
 	Language:         LangEnglish,
 	Theme:            "green",
 	SoundVolumeLimit: 100,
+	SpectrumPalette:  "RGB",
 }
 
 // savedConfig is the on-disk persistent config format
@@ -156,6 +160,7 @@ type savedConfig struct {
 	Theme             string   `json:"theme"`
 	SoundOutputDevice string   `json:"sound_output_device"`
 	SoundVolumeLimit  int      `json:"sound_volume_limit"`
+	SpectrumPalette   string   `json:"spectrum_palette"`
 }
 
 func (a *AppState) configPath() string {
@@ -183,6 +188,10 @@ func (a *AppState) LoadConfig() error {
 	if a.SoundVolumeLimit <= 0 || a.SoundVolumeLimit > 100 {
 		a.SoundVolumeLimit = 100
 	}
+	a.SpectrumPalette = cfg.SpectrumPalette
+	if a.SpectrumPalette == "" {
+		a.SpectrumPalette = "RGB"
+	}
 	return nil
 }
 
@@ -197,6 +206,7 @@ func (a *AppState) SaveConfig() error {
 		Theme:             a.Theme,
 		SoundOutputDevice: a.SoundOutputDevice,
 		SoundVolumeLimit:  a.SoundVolumeLimit,
+		SpectrumPalette:   a.SpectrumPalette,
 	}
 	if a.CurrentProfile != nil {
 		cfg.LastUser = a.CurrentProfile.FolderName

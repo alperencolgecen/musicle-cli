@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"MusicLeCLI/bridge"
+	"MusicLeCLI/internal/browser"
 	"MusicLeCLI/state"
 	"MusicLeCLI/ui"
 
@@ -49,6 +50,10 @@ type HomeModel struct {
 
 	logLines      []string
 	consoleScroll int
+
+	// Browser connector cards on the home sidebar (below the console)
+	connectFocus int // 0 = Spotify, 1 = YouTube Music
+	sidebarFocus int // 0 = console, 1 = connect cards
 
 	editModalOpen bool
 	editSongIdx   int
@@ -200,8 +205,26 @@ func (m *HomeModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePlaylistKey(msg)
 	}
 
+	// Browser connector cards on the home sidebar
+	if m.sectionFocus == 0 && m.sidebarFocus == 1 {
+		switch msg.String() {
+		case "left", "up", "shift+tab":
+			m.connectFocus = 0
+			return m, nil
+		case "right", "down", "tab":
+			m.connectFocus = 1
+			return m, nil
+		case "enter", " ":
+			return m.launchConnectFromHome()
+		}
+	}
+
 	switch msg.String() {
 	case "tab":
+		if m.sectionFocus == 0 {
+			m.sidebarFocus = (m.sidebarFocus + 1) % 2
+			return m, nil
+		}
 		if m.sectionFocus == 1 {
 			if pl := state.Current.CurrentPlaylist; pl != nil && len(pl.Songs) > 0 {
 				m.playlistActionFocus = (m.playlistActionFocus + 1) % 3
@@ -227,6 +250,10 @@ func (m *HomeModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "shift+tab":
+		if m.sectionFocus == 0 {
+			m.sidebarFocus = (m.sidebarFocus + 1) % 2
+			return m, nil
+		}
 		if m.sectionFocus == 1 {
 			if pl := state.Current.CurrentPlaylist; pl != nil && len(pl.Songs) > 0 {
 				m.playlistActionFocus = (m.playlistActionFocus - 1 + 3) % 3
@@ -455,25 +482,20 @@ func (m *HomeModel) CycleSection() (bool, tea.Cmd) {
 	m.focusIdx = -1
 	m.editSelectAll = false
 	m.playlistActionFocus = -1
-	wrapped := false
-	switch m.sectionFocus {
-	case 0:
-		m.sectionFocus = 1
-		m.playlistActionFocus = 0
-	case 1:
-		m.sectionFocus = 2
-		m.focusIdx = 6
-		m.songFocusIdx = 0
-		m.songActionFocus = 0
-		m.songOffset = 0
-	case 2:
-		m.sectionFocus = 0
-		wrapped = true
-	default:
-		m.sectionFocus = 0
-		wrapped = true
+	// F1 cycles the home sidebar focus: console -> Spotify card -> YouTube card
+	// -> (wrap) console. The spectrum/info panel is never a focus target.
+	if m.sidebarFocus == 0 {
+		m.sidebarFocus = 1
+		m.connectFocus = 0
+		return false, tea.HideCursor
 	}
-	return wrapped, tea.HideCursor
+	if m.connectFocus == 0 {
+		m.connectFocus = 1
+		return false, tea.HideCursor
+	}
+	m.sidebarFocus = 0
+	m.connectFocus = 0
+	return true, tea.HideCursor
 }
 
 func (m *HomeModel) maxVisibleSongs() int {
@@ -1220,16 +1242,84 @@ func (m *HomeModel) View() string {
 }
 
 func (m *HomeModel) viewSidebar(bodyH int) string {
-	consoleH := bodyH * 6 / 10
+	w := m.width / 3
+	if w < 40 {
+		w = 40
+	}
+	if w > 55 {
+		w = 55
+	}
+
+	connectH := 7
+	if bodyH < 16 {
+		connectH = bodyH - 9
+		if connectH < 5 {
+			connectH = 5
+		}
+	}
+	consoleH := (bodyH - connectH) * 6 / 10
 	if consoleH < 10 {
 		consoleH = 10
 	}
-	infoH := bodyH - consoleH
+	infoH := bodyH - connectH - consoleH
 	if infoH < 6 {
 		infoH = 6
-		consoleH = bodyH - infoH
+		consoleH = bodyH - connectH - infoH
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, m.renderConsole(consoleH), m.renderInfoPanel(infoH))
+
+	console := m.renderConsole(consoleH)
+	cards := m.renderHomeConnectCards(w, connectH)
+	info := m.renderInfoPanel(infoH)
+	return lipgloss.JoinVertical(lipgloss.Left, console, cards, info)
+}
+
+func (m *HomeModel) renderHomeConnectCards(w, h int) string {
+	if h < 6 {
+		return strings.Repeat(" ", w)
+	}
+	cardW := (w - 3) / 2
+	if cardW < 12 {
+		cardW = 12
+	}
+	cardH := h - 2
+	if cardH < 5 {
+		cardH = 5
+	}
+	spot := m.renderHomeCard("Spotify", "assets/Spotify_logo.png",
+		ui.ColorSpotifyLight, ui.ColorSpotifyFocus, m.connectFocus == 0 && m.sidebarFocus == 1, cardW, cardH)
+	yt := m.renderHomeCard("YouTube Music", "assets/Youtube_logo.png",
+		ui.ColorYouTubeLight, ui.ColorYouTubeFocus, m.connectFocus == 1 && m.sidebarFocus == 1, cardW, cardH)
+	return lipgloss.JoinHorizontal(lipgloss.Top, spot, " ", yt)
+}
+
+func (m *HomeModel) renderHomeCard(name, logoPath string, base, focus lipgloss.Color, focused bool, w, h int) string {
+	border := base
+	labelColor := base
+	if focused {
+		border = focus
+		labelColor = focus
+	}
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Width(w).
+		Height(h).
+		Align(lipgloss.Left, lipgloss.Center)
+	if focused {
+		style = style.Bold(true)
+	}
+	logo := renderPNGLogo(logoPath, 6, h-2)
+	label := lipgloss.NewStyle().Foreground(labelColor).Bold(true).Render(name)
+	content := lipgloss.JoinHorizontal(lipgloss.Center, logo, "  ", label)
+	return style.Render(content)
+}
+
+func (m *HomeModel) launchConnectFromHome() (tea.Model, tea.Cmd) {
+	plat := browser.PlatformSpotify
+	if m.connectFocus == 1 {
+		plat = browser.PlatformYouTube
+	}
+	return m, func() tea.Msg { return homeConnectMsg{platform: plat} }
 }
 
 func (m *HomeModel) addLog(level, msg string) {
@@ -1333,7 +1423,7 @@ func (m *HomeModel) renderConsole(bodyH int) string {
 	}
 
 	consoleStyle := ui.BorderStyle
-	if m.sectionFocus == 0 {
+	if m.sidebarFocus == 0 {
 		consoleStyle = ui.AccentBorderStyle
 	}
 	box := consoleStyle.Width(w).Render(inner)
@@ -1375,9 +1465,6 @@ func (m *HomeModel) renderInfoPanel(bodyH int) string {
 	}
 
 	sectionStyle := ui.BorderStyle
-	if m.sectionFocus == 0 {
-		sectionStyle = ui.AccentBorderStyle
-	}
 	return sectionStyle.Width(w).Render(inner)
 }
 
