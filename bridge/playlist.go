@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"MusicLeCLI/internal/browser"
 	"MusicLeCLI/state"
 )
 
@@ -13,6 +14,43 @@ const mp3Ext = ".mp3"
 
 var allowedAudioExt = map[string]bool{
 	".mp3": true,
+}
+
+// ImportFromBrowser writes a browser-extracted playlist (tracks with their
+// download source) into the profile's playlist directory as song_list.txt
+// metadata. The audio files are not downloaded here.
+func ImportFromBrowser(profileFolder, plFolder, plName string, tracks []browser.Track) error {
+	if err := state.Current.CreatePlaylistStructure(profileFolder, plFolder, plName, "", ""); err != nil {
+		return err
+	}
+	listPath := state.Current.SongListPath(profileFolder, plFolder)
+	for i := range tracks {
+		t := &tracks[i]
+		name := trackBaseName(t)
+		if err := state.AppendSongSource(listPath, name+mp3Ext, t.Title, t.Artist, t.Duration, t.Source); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// trackBaseName produces a stable file base name for an imported track.
+func trackBaseName(t *browser.Track) string {
+	if t.VideoID != "" {
+		return t.VideoID
+	}
+	return sanitizeName(t.Title + " - " + t.Artist)
+}
+
+func sanitizeName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			return '_'
+		}
+		return r
+	}, name)
+	return strings.TrimSpace(name)
 }
 
 // addLocalFile imports an mp3 file or directory into the playlist directory.

@@ -78,6 +78,7 @@ type Song struct {
 	DateAdded string
 	Duration  string
 	FilePath  string
+	Source    string // download source (videoId/watch URL or search query)
 }
 
 // Playlist represents a named collection of songs
@@ -408,7 +409,13 @@ func (a *AppState) CreatePlaylistStructure(profileFolder, plFolder, plName, plBi
 
 // AppendSong appends a song entry line to song_list.txt
 func AppendSong(listPath, filename, title, artist, duration string) error {
-	entry := strings.Join([]string{filename, title, artist, time.Now().Format("2006-01-02"), duration}, "|") + "\n"
+	return AppendSongSource(listPath, filename, title, artist, duration, "")
+}
+
+// AppendSongSource appends a song entry line (including its download Source)
+// to song_list.txt.
+func AppendSongSource(listPath, filename, title, artist, duration, source string) error {
+	entry := strings.Join([]string{filename, title, artist, time.Now().Format("2006-01-02"), duration, source}, "|") + "\n"
 	f, err := os.OpenFile(listPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -463,17 +470,21 @@ func ReadSongs(listPath string) ([]Song, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 5)
-		if len(parts) != 5 {
+		parts := strings.SplitN(line, "|", 6)
+		if len(parts) < 5 {
 			continue
 		}
-		songs = append(songs, Song{
+		s := Song{
 			Filename:  parts[0],
 			Title:     parts[1],
 			Artist:    parts[2],
 			DateAdded: parts[3],
 			Duration:  normalizeDuration(parts[4]),
-		})
+		}
+		if len(parts) == 6 {
+			s.Source = parts[5]
+		}
+		songs = append(songs, s)
 	}
 	return songs, nil
 }
@@ -482,7 +493,7 @@ func ReadSongs(listPath string) ([]Song, error) {
 func WriteSongs(listPath string, songs []Song) error {
 	var buf strings.Builder
 	for _, s := range songs {
-		buf.WriteString(strings.Join([]string{s.Filename, s.Title, s.Artist, s.DateAdded, normalizeDuration(s.Duration)}, "|"))
+		buf.WriteString(strings.Join([]string{s.Filename, s.Title, s.Artist, s.DateAdded, normalizeDuration(s.Duration), s.Source}, "|"))
 		buf.WriteByte('\n')
 	}
 	return os.WriteFile(listPath, []byte(buf.String()), 0644)
