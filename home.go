@@ -1294,11 +1294,11 @@ func (m *HomeModel) viewSidebar(bodyH int) string {
 		w = 55
 	}
 
-	connectH := 8
-	if bodyH < 18 {
-		connectH = bodyH - 10
-		if connectH < 6 {
-			connectH = 6
+	connectH := 6
+	if bodyH < 14 {
+		connectH = bodyH - 8
+		if connectH < 5 {
+			connectH = 5
 		}
 	}
 	consoleH := (bodyH - connectH) * 6 / 10
@@ -1326,8 +1326,8 @@ func (m *HomeModel) renderHomeConnectCards(w, h int) string {
 		cardW = 12
 	}
 	cardH := (h - 2) / 3
-	if cardH < 5 {
-		cardH = 5
+	if cardH < 3 {
+		cardH = 3
 	}
 	spot := m.renderHomeCard("Spotify",
 		ui.ColorSpotifyLight, ui.ColorSpotifyFocus, m.connectFocus == 0 && m.sidebarFocus == 1, cardW, cardH)
