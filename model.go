@@ -204,7 +204,7 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch m.view {
 				case ViewHome:
 					if m.home != nil {
-						m.home.sectionFocus = 0
+						m.home.applyRegion(1)
 					}
 				case ViewProfile:
 					if m.profile != nil {

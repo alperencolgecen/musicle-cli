@@ -300,21 +300,10 @@ func (m *HomeModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f7":
 		return m, m.playSelectedSong()
 	case "f5":
-		m.sectionFocus = 0
-		m.focusIdx = -1
-		m.songFocusIdx = -1
-		m.songActionFocus = -1
+		m.applyRegion(0)
 		return m, tea.HideCursor
 	case "f6":
-		m.sectionFocus = 2
-		if m.focusIdx != 6 {
-			m.focusIdx = 6
-			songs := m.songs()
-			if len(songs) > 0 && m.songFocusIdx < 0 {
-				m.songFocusIdx = 0
-				m.songActionFocus = 0
-			}
-		}
+		m.applyRegion(4)
 		return m, tea.HideCursor
 	case "e":
 		if m.focusIdx == 6 && m.songFocusIdx >= 0 {
@@ -476,26 +465,81 @@ func (m *HomeModel) handlePlaylistKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *HomeModel) CycleSection() (bool, tea.Cmd) {
+// currentHomeRegion derives the active home focus region from the focus fields:
+// 0=console, 1=Spotify card, 2=YouTube card, 3=playlist, 4=songs.
+func (m *HomeModel) currentHomeRegion() int {
+	switch {
+	case m.sidebarFocus == 1 && m.connectFocus == 0:
+		return 1
+	case m.sidebarFocus == 1 && m.connectFocus == 1:
+		return 2
+	case m.sectionFocus == 1:
+		return 3
+	case m.sectionFocus == 2:
+		return 4
+	}
+	return 0
+}
+
+// applyRegion sets the focus fields for a given home region (0..4).
+func (m *HomeModel) applyRegion(r int) {
 	m.songFocusIdx = -1
 	m.songActionFocus = -1
 	m.focusIdx = -1
 	m.editSelectAll = false
 	m.playlistActionFocus = -1
-	// F1 cycles the home sidebar focus: console -> Spotify card -> YouTube card
-	// -> (wrap) console. The spectrum/info panel is never a focus target.
-	if m.sidebarFocus == 0 {
+	m.previewIdx = -1
+	switch r {
+	case 0: // console
+		m.sidebarFocus = 0
+		m.connectFocus = 0
+		m.sectionFocus = 0
+	case 1: // Spotify card
 		m.sidebarFocus = 1
 		m.connectFocus = 0
-		return false, tea.HideCursor
-	}
-	if m.connectFocus == 0 {
+		m.sectionFocus = 0
+	case 2: // YouTube Music card
+		m.sidebarFocus = 1
 		m.connectFocus = 1
-		return false, tea.HideCursor
+		m.sectionFocus = 0
+	case 3: // playlist
+		m.sidebarFocus = 0
+		m.connectFocus = 0
+		m.sectionFocus = 1
+		m.playlistActionFocus = 0
+	case 4: // songs
+		m.sidebarFocus = 0
+		m.connectFocus = 0
+		m.sectionFocus = 2
+		m.focusIdx = 6
+		if songs := m.songs(); len(songs) > 0 {
+			m.songFocusIdx = 0
+			m.songActionFocus = 0
+		}
 	}
-	m.sidebarFocus = 0
-	m.connectFocus = 0
-	return true, tea.HideCursor
+}
+
+// CycleSection implements the F1 focus cycle on the home screen:
+// bottom bar -> Spotify -> YouTube Music -> playlist -> songs -> (wrap) bottom bar.
+// The console (live output) is intentionally not part of the F1 cycle.
+func (m *HomeModel) CycleSection() (bool, tea.Cmd) {
+	r := m.currentHomeRegion()
+	if r < 1 {
+		r = 1
+	}
+	if r >= 4 {
+		// Wrapped past the last region: hand focus back to the bottom bar.
+		m.sidebarFocus = 0
+		m.connectFocus = 0
+		m.sectionFocus = -1
+		m.songFocusIdx = -1
+		m.songActionFocus = -1
+		m.focusIdx = -1
+		m.playlistActionFocus = -1
+		return true, tea.HideCursor
+	}
+	m.applyRegion(r + 1)
+	return false, tea.HideCursor
 }
 
 func (m *HomeModel) maxVisibleSongs() int {
@@ -1432,7 +1476,7 @@ func (m *HomeModel) renderConsole(bodyH int) string {
 	}
 
 	consoleStyle := ui.BorderStyle
-	if m.sidebarFocus == 0 {
+	if m.sidebarFocus == 0 && m.sectionFocus == 0 {
 		consoleStyle = ui.AccentBorderStyle
 	}
 	box := consoleStyle.Width(w).Render(inner)
