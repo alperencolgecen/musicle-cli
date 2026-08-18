@@ -216,9 +216,9 @@ func (m *ConnectModel) renderBase() string {
 	if cardW < 24 {
 		cardW = 24
 	}
-	cardH := (m.height - 16) / 3
-	if cardH < 6 {
-		cardH = 6
+	cardH := (m.height - 16) / 4
+	if cardH < 4 {
+		cardH = 4
 	}
 
 	spotify := m.renderCard("Spotify", ui.ColorSpotify, ui.ColorSpotifyFocus, m.focus == 0, cardW, cardH)
