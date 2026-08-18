@@ -386,8 +386,27 @@ func (m *ConnectModel) renderCard(name, logoPath string, base, focus lipgloss.Co
 
 // renderPNGLogo renders a PNG as half-block ANSI art to fit within cols x rows,
 // reusing the package-level scaleImage helper used for playlist art.
+// brailleDot returns the 8-dot braille bit for a sub-pixel at cell offset
+// (bx,by) in a 2x4 (wide x tall) block. Cell arrangement:
+//
+//	(0,0)=1 (1,0)=4
+//	(0,1)=2 (1,1)=5
+//	(0,2)=3 (1,2)=6
+//	(0,3)=7 (1,3)=8
+func brailleDot(bx, by int) uint16 {
+	order := [2][4]int{{1, 2, 3, 7}, {4, 5, 6, 8}}
+	return 1 << uint(order[bx][by]-1)
+}
+
+// renderPNGLogo renders the brand logo as colored braille art. Each terminal
+// cell becomes a 2x4 sub-pixel block (braille), which keeps an ~square aspect
+// and yields a detailed, recognizable image on ANY terminal (no graphics
+// protocol required). The logo is scaled preserving its aspect ratio and
+// centered within the cols x rows cell grid; each cell's foreground color is
+// the average of its non-transparent sub-pixels, adapted to the terminal's
+// color profile by logoColorSeq.
 func renderPNGLogo(path string, cols, rows int) string {
-	if cols < 3 || rows < 2 {
+	if cols < 2 || rows < 2 {
 		return ""
 	}
 	data, err := logoFS.ReadFile(path)
@@ -402,29 +421,65 @@ func renderPNGLogo(path string, cols, rows int) string {
 	if err != nil {
 		return ""
 	}
-	resized := scaleImage(img, cols, rows*2)
+	b := img.Bounds()
+	iw, ih := b.Dx(), b.Dy()
+	if iw <= 0 || ih <= 0 {
+		return ""
+	}
+	// Sub-pixel grid: braille cells are 2 wide x 4 tall and render ~square.
+	gridW := cols * 2
+	gridH := rows * 4
+	imgAspect := float64(iw) / float64(ih)
+	var drawW, drawH int
+	if float64(gridW)/float64(gridH) > imgAspect {
+		drawH = gridH
+		drawW = int(float64(drawH) * imgAspect)
+	} else {
+		drawW = gridW
+		drawH = int(float64(drawW) / imgAspect)
+	}
+	if drawW < 1 {
+		drawW = 1
+	}
+	if drawH < 1 {
+		drawH = 1
+	}
+	scaled := scaleImage(img, drawW, drawH)
+	offX := (gridW - drawW) / 2
+	offY := (gridH - drawH) / 2
+
 	var out strings.Builder
 	for cy := 0; cy < rows; cy++ {
 		for cx := 0; cx < cols; cx++ {
-			r1, g1, b1, a1 := resized.At(cx, cy*2).RGBA()
-			r2, g2, b2, a2 := resized.At(cx, cy*2+1).RGBA()
-			if a1 < 128 && a2 < 128 {
+			var dots uint16
+			var rSum, gSum, bSum, n int
+			transparent := true
+			for by := 0; by < 4; by++ {
+				for bx := 0; bx < 2; bx++ {
+					px := cx*2 + bx - offX
+					py := cy*4 + by - offY
+					if px < 0 || px >= drawW || py < 0 || py >= drawH {
+						continue
+					}
+					r, g, bl, a := scaled.At(px, py).RGBA()
+					if a < 128 {
+						continue
+					}
+					transparent = false
+					dots |= brailleDot(bx, by)
+					rSum += int(r >> 8)
+					gSum += int(g >> 8)
+					bSum += int(bl >> 8)
+					n++
+				}
+			}
+			if transparent || n == 0 {
 				out.WriteByte(' ')
 				continue
 			}
-			if a2 < 128 {
-				out.WriteString(logoColorSeq(r1, g1, b1, true))
-				out.WriteString("▀\033[0m")
-				continue
-			}
-			if a1 < 128 {
-				out.WriteString(logoColorSeq(r2, g2, b2, true))
-				out.WriteString("▄\033[0m")
-				continue
-			}
-			out.WriteString(logoColorSeq(r2, g2, b2, true))
-			out.WriteString(logoColorSeq(r1, g1, b1, false))
-			out.WriteString("▄\033[0m")
+			out.WriteString(logoColorSeq(uint32(rSum/n)<<8, uint32(gSum/n)<<8, uint32(bSum/n)<<8, true))
+			out.WriteString(string(rune(0x2800 + int(dots))))
+			out.WriteString("\033[0m")
 		}
 		out.WriteByte('\n')
 	}

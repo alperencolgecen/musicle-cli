@@ -1352,18 +1352,18 @@ func (m *HomeModel) renderHomeCard(name, logoPath string, base, focus lipgloss.C
 	if focused {
 		style = style.Bold(true)
 	}
-	// Fill the card with a wide logo, and stack the name beneath it.
+	// Fill the card with the brand logo (braille art), name beneath it.
 	logoRows := h - 3
 	if logoRows < 2 {
 		logoRows = 2
 	}
-	logoCols := w - 4
+	logoCols := w - 2
 	if logoCols < 4 {
 		logoCols = 4
 	}
 	logo := renderPNGLogo(logoPath, logoCols, logoRows)
 	label := lipgloss.NewStyle().Foreground(labelColor).Bold(true).Render(name)
-	content := lipgloss.JoinVertical(lipgloss.Center, logo, "", label)
+	content := lipgloss.JoinVertical(lipgloss.Center, logo, label)
 	return style.Render(content)
 }
 
