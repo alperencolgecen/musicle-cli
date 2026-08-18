@@ -19,7 +19,31 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine tag
+        id: tag
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG zaten var; notlar güncelleniyor."
+            gh release edit "$TAG" --notes-file CHANGELOG.md || true
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file CHANGELOG.md
+          fi
+
   linux-amd64:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +73,7 @@ jobs:
         run: gh release upload "$TAG" build/musicle-cli_Linux_x86_64.tar.gz
 
   linux-arm64:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +112,7 @@ jobs:
         run: gh release upload "$TAG" build/musicle-cli_Linux_arm64.tar.gz
 
   windows:
+    needs: create-release
     strategy:
       matrix:
         arch: [amd64, "386", arm64]
@@ -125,6 +151,7 @@ jobs:
         run: gh release upload "$TAG" build/musicle-cli_Windows_${{ matrix.arch }}.tar.gz
 
   appimage:
+    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -143,11 +170,13 @@ jobs:
         run: |
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
+      - name: Prepare engine (linux)
+        run: ./scripts/prepare-engine.sh linux
       - name: Build binary
         env:
           RAW: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          CGO_ENABLED=1 go build \
+          CGO_ENABLED=1 go build -tags engine_assets \
             -ldflags="-s -w -X main.version=${RAW#v} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%d)" \
             -o musicle-cli-linux-x86_64.AppDir/usr/bin/musicle-cli .
       - name: Prepare AppDir
@@ -188,6 +217,7 @@ DESKTOP
         run: gh release upload "$TAG" musicle-cli_*.AppImage
 
   macos-intel:
+    needs: create-release
     runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
@@ -220,6 +250,7 @@ DESKTOP
         run: gh release upload "$TAG" build/musicle-cli_macOS_x86_64.tar.gz
 
   macos-arm:
+    needs: create-release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
