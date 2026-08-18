@@ -205,7 +205,7 @@ func (c *CDPClient) Evaluate(sessionID, expr string) (json.RawMessage, error) {
 		return nil, err
 	}
 	var out struct {
-		Result json.RawMessage `json:"result"`
+		Result           json.RawMessage `json:"result"`
 		ExceptionDetails *struct {
 			Text string `json:"text"`
 		} `json:"exceptionDetails"`

@@ -22,9 +22,9 @@ type Browser struct {
 
 // DevToolsVersion is the JSON response of the DevTools /json/version endpoint.
 type DevToolsVersion struct {
-	Browser               string `json:"Browser"`
-	ProtocolVersion       string `json:"Protocol-Version"`
-	WebSocketDebuggerURL  string `json:"webSocketDebuggerUrl"`
+	Browser              string `json:"Browser"`
+	ProtocolVersion      string `json:"Protocol-Version"`
+	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
 // browserBinNames lists the executable base names we treat as supported

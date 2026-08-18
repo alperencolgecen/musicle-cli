@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -117,11 +116,11 @@ func (m *ConnectModel) confirm(i int) error {
 		return nil
 	}
 	pl := m.playlists[i]
-	displayName, folderName := nextProfileName(m.chosen)
+	displayName, folderName := browser.NextProfileName(state.Current.Profiles, m.chosen, state.Current.ProfilesDir())
 	if err := state.Current.CreateProfileStructure(folderName, displayName, "", "", state.Current.Language); err != nil {
 		return err
 	}
-	plFolder := uniqueFolder(slugify(pl.Name), folderName)
+	plFolder := uniqueFolder(browser.Slugify(pl.Name), folderName)
 	if err := bridge.ImportFromBrowser(folderName, plFolder, pl.Name, pl.Tracks); err != nil {
 		return err
 	}
@@ -142,39 +141,6 @@ func (m *ConnectModel) confirm(i int) error {
 	return nil
 }
 
-// nextProfileName derives the auto profile name/ folder for a platform:
-// first "Spotify Profili" / "YouTube Profili", then "... 2", "... 3", …
-func nextProfileName(platform browser.Platform) (string, string) {
-	prefix := "Spotify Profili"
-	if platform == browser.PlatformYouTube {
-		prefix = "YouTube Profili"
-	}
-	n := 0
-	for _, p := range state.Current.Profiles {
-		if strings.HasPrefix(p.DisplayName, prefix) {
-			n++
-		}
-	}
-	displayName := prefix
-	if n > 0 {
-		displayName = fmt.Sprintf("%s %d", prefix, n+1)
-	}
-	folder := slugify(displayName)
-	base := folder
-	i := 2
-	for {
-		if _, err := os.Stat(state.Current.ProfilesDir()); os.IsNotExist(err) {
-			break
-		}
-		if _, err := os.Stat(filepath.Join(state.Current.ProfilesDir(), folder)); os.IsNotExist(err) {
-			break
-		}
-		folder = fmt.Sprintf("%s_%d", base, i)
-		i++
-	}
-	return displayName, folder
-}
-
 // uniqueFolder returns a playlist folder name that does not yet exist under the
 // given profile directory.
 func uniqueFolder(name, profileFolder string) string {
@@ -188,24 +154,6 @@ func uniqueFolder(name, profileFolder string) string {
 		i++
 	}
 	return name
-}
-
-// slugify converts a display name into a filesystem-safe folder name.
-func slugify(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			return r
-		}
-		if r == ' ' || r == '-' {
-			return '_'
-		}
-		return -1
-	}, s)
-	if s == "" {
-		s = "playlist"
-	}
-	return s
 }
 
 // finishScan stores the result of a browser scan and dismisses the modal.

@@ -12,16 +12,16 @@ type Track struct {
 	Artist   string `json:"artist"`
 	VideoID  string `json:"videoId,omitempty"`  // YouTube Music only
 	Duration string `json:"duration,omitempty"` // mm:ss when available
-	Source   string `json:"source,omitempty"`    // query used for download (Spotify)
+	Source   string `json:"source,omitempty"`   // query used for download (Spotify)
 }
 
 // Playlist is a collection extracted from a browser tab.
 type Playlist struct {
-	Name     string  `json:"name"`
-	URL      string  `json:"url"`
-	Cover    string  `json:"cover,omitempty"` // cover image URL when available
-	TrackCount int   `json:"trackCount"`
-	Tracks   []Track `json:"tracks"`
+	Name       string  `json:"name"`
+	URL        string  `json:"url"`
+	Cover      string  `json:"cover,omitempty"` // cover image URL when available
+	TrackCount int     `json:"trackCount"`
+	Tracks     []Track `json:"tracks"`
 }
 
 // Platform identifies which music service a tab belongs to.
@@ -103,6 +103,14 @@ func ConnectFirst(platform Platform) (*Playlist, error) {
 	return &pls[0], nil
 }
 
+// capTracks truncates a track list to MaxTracks.
+func capTracks(t []Track) []Track {
+	if len(t) > MaxTracks {
+		return t[:MaxTracks]
+	}
+	return t
+}
+
 func scrapeYouTubeMusic(client *CDPClient, session, pageURL string) ([]Playlist, error) {
 	// Pull the playlist id from the page URL (?list= or &list=).
 	listID := ""
@@ -123,9 +131,7 @@ func scrapeYouTubeMusic(client *CDPClient, session, pageURL string) ([]Playlist,
 	if err := json.Unmarshal(raw, &pl); err != nil {
 		return nil, fmt.Errorf("yt music parse: %w", err)
 	}
-	if len(pl.Tracks) > MaxTracks {
-		pl.Tracks = pl.Tracks[:MaxTracks]
-	}
+	pl.Tracks = capTracks(pl.Tracks)
 	pl.TrackCount = len(pl.Tracks)
 	return []Playlist{pl}, nil
 }
@@ -220,9 +226,7 @@ func scrapeSpotify(client *CDPClient, session, pageURL string) ([]Playlist, erro
 	if pl.Name == "" {
 		pl.Name = "Spotify Playlist"
 	}
-	if len(pl.Tracks) > MaxTracks {
-		pl.Tracks = pl.Tracks[:MaxTracks]
-	}
+	pl.Tracks = capTracks(pl.Tracks)
 	pl.TrackCount = len(pl.Tracks)
 	return []Playlist{pl}, nil
 }
